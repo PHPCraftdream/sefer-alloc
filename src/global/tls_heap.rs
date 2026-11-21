@@ -69,8 +69,8 @@
 
 use core::cell::Cell;
 
-use crate::registry::heap_registry::HeapLease;
-use crate::registry::{HeapCore, HeapRegistry};
+use sefer_registry::registry::heap_registry::HeapLease;
+use sefer_registry::registry::{bootstrap, HeapCore, HeapRegistry};
 
 /// Sentinel value stamped into [`LOCAL`] by [`mark_local_torn`] the instant
 /// this thread's [`LeaseReleaseGuard`] starts tearing down (before the slot is
@@ -136,7 +136,7 @@ pub fn dbg_saturation_retry_decision(
 /// `claim_lease` attempt should be made; a `false` answer routes straight to
 /// the fallback without re-running the full selector on a saturated registry.
 fn saturation_retry_allowed() -> bool {
-    let current = crate::registry::bootstrap::ensure().saturation.snapshot();
+    let current = bootstrap::ensure().saturation_snapshot();
     SATURATION_GATE
         .try_with(|g| {
             let gate = g.get();
@@ -164,7 +164,7 @@ fn saturation_retry_allowed() -> bool {
 /// R6-T07: record a failed (registry-exhausted) bind so subsequent
 /// allocations on this thread skip the selector until the version changes.
 fn record_saturation_verdict() {
-    let current = crate::registry::bootstrap::ensure().saturation.snapshot();
+    let current = bootstrap::ensure().saturation_snapshot();
     let _ = SATURATION_GATE.try_with(|g| {
         g.set(SaturationGate {
             saturated: true,

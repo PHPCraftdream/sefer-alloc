@@ -28,7 +28,7 @@
 // Pure functions over (path, contents) so tests can point them at synthetic
 // trees.
 
-import { readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Remove block comments (slash-star ... star-slash) and // comments
@@ -160,14 +160,28 @@ export function cfgFacts(bodies) {
 }
 
 /**
- * Derive the first-config-wins marker list from src/: every candidate that
- * actually occurs in src/ is kept with its first src/ hit (file:line).
- * Pure over explicit input paths.
+ * Derive the first-config-wins marker list from root and registry sources.
+ * Preserve root hits first; look in the extracted crate for remaining markers.
  */
 export function deriveFirstConfigWinMarkers(srcDir, candidates, grepFirstHit) {
+  const registryRel = 'crates/core/sefer-registry/src';
+  const registryDir = join(srcDir, '..', registryRel);
+  const registrySources = existsSync(registryDir) ? listSrcRustFiles(registryDir).map(file => ({
+    file: `${registryRel}/${file}`,
+    text: readFileSync(join(registryDir, file), 'utf8'),
+  })) : [];
   const markers = [];
   for (const c of candidates) {
-    const hit = grepFirstHit(srcDir, c);
+    let hit = grepFirstHit(srcDir, c);
+    if (!hit) {
+      const re = markerRegex(c);
+      for (const { file, text } of registrySources) {
+        const m = text.match(re);
+        if (!m) continue;
+        hit = { file, line: text.slice(0, m.index).split(/\r?\n/).length };
+        break;
+      }
+    }
     if (hit) markers.push({ marker: c, src_hit: hit });
   }
   return markers;
@@ -221,14 +235,14 @@ export const FIRST_CONFIG_WIN_CANDIDATES = [
  */
 export const MARKER_PROVENANCE = {
   with_config: 'src/global/sefer_alloc/core.rs:277',
-  live_config_matches: 'crates/core/sefer-alloc-core/src/alloc_core/alloc_core/lifecycle_parts/lifecycle.rs:285 + src/registry/heap_core/core.rs:400',
+  live_config_matches: 'crates/core/sefer-alloc-core/src/alloc_core/alloc_core/lifecycle_parts/lifecycle.rs:285 + crates/core/sefer-registry/src/registry/heap_core/core.rs:400',
   claim_with_config: '(no src/ hit; auto-dropped by derive)',
-  claim_lease_with_config: 'src/registry/heap_core/core.rs (derive output)',
+  claim_lease_with_config: 'crates/core/sefer-registry/src/registry/heap_core/core.rs (derive output)',
   current_for_alloc_with_config: 'src/global/tls_heap.rs:411',
   bind_slow_tagged_with_config: 'src/global/tls_heap.rs:491',
-  new_with_config: 'src/registry/heap_core/core.rs:316 (+ claim.rs)',
-  heap_ptr_with_config: 'src/global/fallback.rs:188',
-  config_conflicts_total: 'src/registry/heap_registry/counters.rs:99',
+  new_with_config: 'crates/core/sefer-registry/src/registry/heap_core/core.rs:316 (+ claim.rs)',
+  heap_ptr_with_config: 'crates/core/sefer-registry/src/fallback.rs:188',
+  config_conflicts_total: 'crates/core/sefer-registry/src/registry/heap_registry/counters.rs:99',
   config_conflicts: 'src/global/alloc_stats.rs:183 (AllocStats field)',
   fallback_config_conflicts: 'src/global/sefer_alloc/core.rs:372',
   thp_tuple_conflicts: 'src/global/sefer_alloc/diag.rs (alloc_stats.rs:193 field family)',

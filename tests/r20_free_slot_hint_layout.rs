@@ -7,10 +7,10 @@ const MAX_HEAPS: usize = 4096;
 #[allow(unused_imports)]
 use core::sync::atomic::{AtomicU64, Ordering};
 #[allow(dead_code, unused_imports)]
-#[path = "../src/registry/bootstrap/free_slot_hint.rs"]
+#[path = "../crates/core/sefer-registry/src/registry/bootstrap/free_slot_hint.rs"]
 mod real_free_slot_hint;
 #[allow(dead_code, unused_imports)]
-#[path = "../src/registry/bootstrap/saturation.rs"]
+#[path = "../crates/core/sefer-registry/src/registry/bootstrap/saturation.rs"]
 mod real_saturation;
 use real_free_slot_hint::FreeSlotHint;
 use sefer_alloc::registry::bootstrap::Registry;

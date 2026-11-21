@@ -79,7 +79,7 @@ const PANIC_SCAN_FILES = [
   'crates/core/sefer-segment/src/segment/segment_header/segment_header_impl/terminal_words.rs',
   'crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_magazine.rs',
   'crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small/alloc_core_small_impl.rs',
-  'src/registry/bootstrap/registry.rs',
+  'crates/core/sefer-registry/src/registry/bootstrap/registry.rs',
   'crates/core/sefer-alloc-core/src/alloc_core/platform/numa.rs',
   'src/global/exact_object/exact_shard.rs',
 ];
@@ -284,7 +284,7 @@ const FIXTURES = [
     why: 'bare std::process::abort outside fatal.rs must be flagged',
   },
   {
-    path: 'src/registry/bootstrap/registry.rs',
+    path: 'crates/core/sefer-registry/src/registry/bootstrap/registry.rs',
     kind: 'panic',
     content: 'fn f() {\n    x.expect("boom");\n}\n',
     expect: 'flag',
@@ -348,7 +348,7 @@ const FIXTURES = [
     why: 'debug_assert!( is an excluded construct (word boundary)',
   },
   {
-    path: 'src/registry/bootstrap/registry.rs',
+    path: 'crates/core/sefer-registry/src/registry/bootstrap/registry.rs',
     kind: 'panic',
     content: 'fn f() -> u8 {\n    x.unwrap_or_else(f)\n}\n',
     expect: 'pass',
@@ -410,6 +410,7 @@ function realScan() {
   const scanRoots = [
     join(REPO_ROOT, 'src'),
     join(REPO_ROOT, 'crates/core/sefer-alloc-core/src'),
+    join(REPO_ROOT, 'crates/core/sefer-registry/src'),
   ];
   for (const full of scanRoots.flatMap((dir) => [...walkRs(dir)])) {
     const rel = toRepoRel(full).split(sep).join('/');

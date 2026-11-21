@@ -440,7 +440,21 @@ runs:
     - run: cargo clippy -p sefer-alloc-core --all-features --all-targets -- -D warnings
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
+    # P2.3: check the registry feature-off surface on i686 before the root R2-17 oracle.
+    - run: cargo check -p sefer-registry --target i686-unknown-linux-gnu --no-default-features
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
     - run: cargo test --locked --test regression_r2_17_64bit_target_gate
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    # Exercise the extracted member independently of the root package.
+    - run: cargo test -p sefer-registry --no-fail-fast
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo test -p sefer-registry --all-features --no-fail-fast
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+    - run: cargo clippy -p sefer-registry --all-features --all-targets -- -D warnings
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
     - run: cargo clippy -p sefer-concurrent --all-features --all-targets -- -D warnings

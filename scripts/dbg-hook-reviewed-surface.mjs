@@ -4,9 +4,9 @@
 // Pure observers: read-only, no allocator-state mutation.
 export const PURE_OBSERVERS = [
   // PRF01: oracle-only relaxed totals, constant-zero A summary; no pointer/reset/policy.
-  "src/registry/heap_core/diag/queries.rs::dbg_prf01_sidecar_oracle",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_prf01_sidecar_oracle",
   // Strict-trim process-wide relaxed totals and this core's independent segment geometry only.
-  "src/registry/heap_core/diag/queries.rs::dbg_prf01_strict_words_visited",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_prf01_strict_words_visited",
   // Strict-trim read-only relaxed counter totals plus owned segment geometry; no reset or policy.
   "src/global/sefer_alloc/diag.rs::dbg_prf01_strict_words_visited",
   // B4: static snapshot of 7 Relaxed counters; impl gated on internals+bench-internals, no instance/pointer use.
@@ -18,19 +18,19 @@ export const PURE_OBSERVERS = [
   // B4 §11 test-only: read-only cursor slot of this AllocCore.
   "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small/find_segment/class_cursor.rs::dbg_class_cursor_slot",
   // B4 §11 test-only: read-only cursor slot of this heap's AllocCore.
-  "src/registry/heap_core/core.rs::dbg_class_cursor_slot",
+  "crates/core/sefer-registry/src/registry/heap_core/core.rs::dbg_class_cursor_slot",
   // PRF01: actual type layout only, no allocator instance or pointer access.
-  "src/registry/heap_core/diag/queries.rs::dbg_prf01_small_sidecar_size",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_prf01_small_sidecar_size",
   // C1: relaxed successful-lease totals only, no pointers, reset or policy use.
-  "src/registry/bootstrap/free_slot_hint.rs::dbg_popcount",
-  "src/registry/heap_registry/claim.rs::dbg_registry_claim_sources",
-  "src/registry/heap_registry/claim.rs::dbg_registry_free_set_claims",
+  "crates/core/sefer-registry/src/registry/bootstrap/free_slot_hint.rs::dbg_popcount",
+  "crates/core/sefer-registry/src/registry/heap_registry/claim.rs::dbg_registry_claim_sources",
+  "crates/core/sefer-registry/src/registry/heap_registry/claim.rs::dbg_registry_free_set_claims",
   // Read-only Acquire popcount of the advisory FREE-slot bitmap.
-  "src/registry/heap_registry/claim.rs::dbg_free_slot_hint_popcount",
+  "crates/core/sefer-registry/src/registry/heap_registry/claim.rs::dbg_free_slot_hint_popcount",
   // Read-only Relaxed load of the advisory reuse-hint word; no pointer or reset.
-  "src/registry/heap_registry/claim.rs::dbg_reuse_hint",
+  "crates/core/sefer-registry/src/registry/heap_registry/claim.rs::dbg_reuse_hint",
   // C1: numeric results of resolved-default comparison under the claiming lease.
-  "src/registry/heap_registry/claim.rs::dbg_registry_default_config_results",
+  "crates/core/sefer-registry/src/registry/heap_registry/claim.rs::dbg_registry_default_config_results",
   // R6-T07: pure decision over four scalar arguments; no allocator state.
   "src/global/tls_heap.rs::dbg_saturation_retry_decision",
   // CI-2b: relaxed cumulative System totals and actual slot layout only;
@@ -121,7 +121,7 @@ export const PURE_OBSERVERS = [
   "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_is_free_for",
   // B4 (в) F11: read-only state-nibble of one granule via the canonical table root; no mutation.
   "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_state_byte_state_for",
-  "src/registry/heap_core/diag/queries.rs::dbg_state_byte_state_for",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_state_byte_state_for",
   "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_committed_payload_end_for",
   "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_grow_commit_count",
   "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_grow_chunk",
@@ -131,31 +131,31 @@ export const PURE_OBSERVERS = [
   "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_pooled_count",
   "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/alloc_core_small_pool_impl.rs::dbg_pool_cap",
   "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/decommit.rs::dbg_is_decommitted_for",
-  "src/global/fallback.rs::dbg_fallback_lock_acquisitions",
+  "crates/core/sefer-registry/src/fallback.rs::dbg_fallback_lock_acquisitions",
   // Pure production-helper transition on a by-value u32; no shared state,
   // allocator metadata, pointers or scheduler action; internals + bench-internals gated.
-  "src/global/fallback.rs::dbg_fallback_lock_spin_transition",
-  "src/global/fallback.rs::dbg_init_state",
-  "src/registry/bootstrap/registry.rs::dbg_chunk_is_materialised",
-  "src/registry/heap_core/core.rs::dbg_cached_numa_node",
-  "src/registry/heap_core/diag/queries.rs::dbg_class_for",
-  "src/registry/heap_core/diag/queries.rs::dbg_refill_n_for_class",
+  "crates/core/sefer-registry/src/fallback.rs::dbg_fallback_lock_spin_transition",
+  "crates/core/sefer-registry/src/fallback.rs::dbg_init_state",
+  "crates/core/sefer-registry/src/registry/bootstrap/registry.rs::dbg_chunk_is_materialised",
+  "crates/core/sefer-registry/src/registry/heap_core/core.rs::dbg_cached_numa_node",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_class_for",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_refill_n_for_class",
   // Pure const-table read (FREE_PARK_CAP[c]); no pointer, no allocation, no state mutation.
-  "src/registry/heap_core/diag/queries.rs::dbg_free_park_cap",
-  "src/registry/heap_core/diag/queries.rs::dbg_directory_bit_for_ptr",
-  "src/registry/heap_core/diag/queries.rs::dbg_pooled_count",
-  "src/registry/heap_core/diag/queries.rs::dbg_segment_base_of_ptr",
-  "src/registry/heap_core/diag/queries.rs::dbg_live_count_for",
-  "src/registry/heap_core/diag/queries.rs::dbg_tcache_virgin_mask",
-  "src/registry/heap_core/diag/queries.rs::dbg_tcache_count",
-  "src/registry/heap_core/diag/queries.rs::dbg_depot_len",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_free_park_cap",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_directory_bit_for_ptr",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_pooled_count",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_segment_base_of_ptr",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_live_count_for",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_tcache_virgin_mask",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_tcache_count",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_depot_len",
   // G1-K7: read-only copies of the resolved budget and owner-only counters.
-  "src/registry/heap_core/diag/queries.rs::dbg_depot_budget",
-  "src/registry/heap_core/diag/queries.rs::dbg_depot_overflow",
-  "src/registry/heap_core/diag/queries.rs::dbg_depot_ring",
-  "src/registry/heap_core/diag/queries.rs::dbg_depot_ticking",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_depot_budget",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_depot_overflow",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_depot_ring",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_depot_ticking",
   // WB-3: read-only copy of the overflow decay / ingress / latch state.
-  "src/registry/heap_core/diag/queries.rs::dbg_depot_epoch",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_depot_epoch",
   // G1-K7: pure const resolution of a by-value config.
   "crates/core/sefer-policy/src/large_cache_config.rs::dbg_resolved_depot_budget",
   // CF-2: pure const resolution of a by-value config.
@@ -163,18 +163,18 @@ export const PURE_OBSERVERS = [
   "crates/core/sefer-policy/src/large_cache_config.rs::dbg_resolved_huge_page_after_segments",
   // J13b: pure const resolution of a by-value config into a Copy tuple.
   "crates/core/sefer-policy/src/large_cache_config.rs::dbg_resolved_thp_tuple",
-  "src/registry/heap_core/diag/diag_probes.rs::dbg_hardened_large_noop_count",
-  "src/registry/heap_core/diag/diag_probes.rs::dbg_contains_base",
-  "src/registry/heap_core/diag/diag_probes.rs::dbg_hash_contains_only",
-  "src/registry/heap_core/diag/queries.rs::dbg_kind_at_tag",
-  "src/registry/heap_core/diag/queries.rs::dbg_kind_byte_of",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/diag_probes.rs::dbg_hardened_large_noop_count",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/diag_probes.rs::dbg_contains_base",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/diag_probes.rs::dbg_hash_contains_only",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_kind_at_tag",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_kind_byte_of",
   // Pure numeric size-class divisibility forwarders (no pointer, no state).
   "crates/core/sefer-segment/src/segment/support/segment_directory/segment_layout.rs::dbg_size_class_divides",
   "crates/core/sefer-segment/src/segment/support/segment_directory/segment_layout.rs::dbg_size_class_divisor",
   // Non-panicking SegmentTable membership probe (canonical_root_for); read-only.
-  "src/registry/heap_core/diag/queries.rs::dbg_segment_registered_for",
-  "src/registry/heap_core/diag/queries.rs::dbg_table_count",
-  "src/registry/bootstrap/ensure.rs::dbg_slot_or_none",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_segment_registered_for",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_table_count",
+  "crates/core/sefer-registry/src/registry/bootstrap/ensure.rs::dbg_slot_or_none",
   // P2.2: address-only canonical identity resolution (segment_base_of_ptr key
   // plus table-held canonical_base_of); pointer arg never dereferenced, no
   // cache or metadata write.
@@ -200,7 +200,7 @@ export const SAFE_MUTATORS = [
     "pure wrapper mapping canonical_block_of's verified (root, block) witness into OwnedBlock; no additional pointer use or state beyond the delegated canonical resolution; alloc-global gated"
   ],
   [
-    "src/registry/heap_core/diag/diag_probes.rs::dbg_arm_depot_overflow_faults",
+    "crates/core/sefer-registry/src/registry/heap_core/diag/diag_probes.rs::dbg_arm_depot_overflow_faults",
     "G1-K7 test fault: stores Relaxed fail-next counts consulted only before a depot-overflow reservation and (aligned-vmem's existing hook, as dbg_arm_commit_fail) before a real page commit; both take existing OS-refusal paths; no pointer, no metadata write; compiled only with the test-only lazy-commit-fault-injection feature"
   ],
   [
@@ -210,28 +210,28 @@ export const SAFE_MUTATORS = [
     "crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs::dbg_with_shard_of_locked_for_test",
     "bench-internals-only ordinary shard guard; pointer address is only a shard key, never dereferenced; callback receives no protected data; reentry or a stranded holder risks liveness, not memory safety; unwind releases the guard"
   ],
-  ["src/registry/bootstrap/registry.rs::dbg_slot_state", "Registry::slot may materialize a chunk and abort on OOM; then reads atomic state, without borrowing the core"],
-  ["src/registry/bootstrap/registry.rs::dbg_slot_generation", "Registry::slot may materialize a chunk and abort on OOM; then reads atomic generation, without borrowing the core"],
-  ["src/registry/heap_registry/counters.rs::dbg_slot_initialised", "Registry::slot may materialize a chunk and abort on OOM; then reads initialization state, without borrowing the core"],
+  ["crates/core/sefer-registry/src/registry/bootstrap/registry.rs::dbg_slot_state", "Registry::slot may materialize a chunk and abort on OOM; then reads atomic state, without borrowing the core"],
+  ["crates/core/sefer-registry/src/registry/bootstrap/registry.rs::dbg_slot_generation", "Registry::slot may materialize a chunk and abort on OOM; then reads atomic generation, without borrowing the core"],
+  ["crates/core/sefer-registry/src/registry/heap_registry/counters.rs::dbg_slot_initialised", "Registry::slot may materialize a chunk and abort on OOM; then reads initialization state, without borrowing the core"],
   [
-    "src/registry/heap_registry/claim.rs::dbg_forget_free_slot_hint",
+    "crates/core/sefer-registry/src/registry/heap_registry/claim.rs::dbg_forget_free_slot_hint",
     "clears one bit in the non-authoritative FREE hint bitmap only; slot-state CAS remains the ownership authority, so a missed hint affects selection rather than correctness"
   ],
   [
-    "src/registry/heap_registry/claim.rs::dbg_claim_lease",
+    "crates/core/sefer-registry/src/registry/heap_registry/claim.rs::dbg_claim_lease",
     "test-only forwarder to real claim CAS; may increment generation and materialize/bind HeapCore on first claim; " +
       "returns a typed HeapLease whose Drop publishes LIVE->FREE; `core(&mut self)` is exclusive and lease-bound; no raw pointer (Ph4a, task #2091)"
   ],
   [
-    "src/registry/heap_registry/claim.rs::dbg_claim_lease_with_config",
+    "crates/core/sefer-registry/src/registry/heap_registry/claim.rs::dbg_claim_lease_with_config",
     "test-only forwarder to the real claim_lease_with_config path (same claim_impl CAS protocol and N2 config-conflict hook as HeapRegistry::claim_with_config); like dbg_claim_lease its exclusive core(&mut self) borrow is tied to the CAS-owned lease; it returns a typed HeapLease (Drop = Release LIVE->FREE), takes a LargeCacheConfig by value and no raw pointers (Ph4c, task #2107)"
   ],
   [
-    "src/registry/heap_registry/claim.rs::dbg_try_maintenance",
+    "crates/core/sefer-registry/src/registry/heap_registry/claim.rs::dbg_try_maintenance",
     "test-only forwarder to HeapRegistry::try_maintenance after the Ph4c surface narrowing made it pub(crate) (ADR addendum section 2.6); same FREE->MAINTENANCE CAS as the production path, returns the typed MaintenanceLease whose Drop restores FREE, takes no pointer; dbg_with_core lends an exclusive &mut HeapCore tied to the won FREE->MAINTENANCE CAS and mutable lease borrow"
   ],
   [
-    "src/registry/heap_registry/claim.rs::dbg_with_core",
+    "crates/core/sefer-registry/src/registry/heap_registry/claim.rs::dbg_with_core",
     "test-only forwarder to MaintenanceLease::with_core after the Ph4c surface narrowing made it pub(crate) (ADR addendum section 2.6); the callback receives the exclusive &mut HeapCore guarded by the lease's won FREE->MAINTENANCE CAS, and the alias adds no access beyond the crate-only original"
   ],
   [
@@ -315,7 +315,7 @@ export const SAFE_MUTATORS = [
     "calls the real production drain_small_pool teardown-trim primitive directly (also called from trim_for_recycle)"
   ],
   [
-    "src/global/fallback.rs::dbg_panic_in_with_heap_releases_lock",
+    "crates/core/sefer-registry/src/fallback.rs::dbg_panic_in_with_heap_releases_lock",
     "drives a real panic through the production with_heap/LockGuard RAII path; exercises, does not bypass, existing safe machinery"
   ],
   [
@@ -327,47 +327,47 @@ export const SAFE_MUTATORS = [
     "same poison/resolve/restore bracket as dbg_teardown_then_resolve_is_fallback"
   ],
   [
-    "src/registry/bootstrap/ensure.rs::dbg_rollback_chunk_sentinel_reenterable",
+    "crates/core/sefer-registry/src/registry/bootstrap/ensure.rs::dbg_rollback_chunk_sentinel_reenterable",
     "entry CAS proves the chunk cell UNINIT before touching it; restores to null before returning"
   ],
   [
-    "src/registry/bootstrap/saturation.rs::dbg_with_word_for_test",
+    "crates/core/sefer-registry/src/registry/bootstrap/saturation.rs::dbg_with_word_for_test",
     "constructs only a local atomic hint for boundary models; never touches the process-global registry"
   ],
   [
-    "src/registry/heap_registry/counters.rs::dbg_claim_then_simulate_oom",
+    "crates/core/sefer-registry/src/registry/heap_registry/counters.rs::dbg_claim_then_simulate_oom",
     "claims a real slot via the production pick_slot/CAS/push_back_after_oom path; reproduces, does not invent, the real post-OOM rollback state"
   ],
   [
-    "src/registry/heap_registry/counters.rs::dbg_bump_count_without_materialising",
+    "crates/core/sefer-registry/src/registry/heap_registry/counters.rs::dbg_bump_count_without_materialising",
     "R2-11 (task #2013): delegates to the real production bump_count (a single AtomicU32::fetch_add on Registry::count, the identical op pick_slot/claim always perform); the minted index is never pushed onto free_slots and never claimed, matching count_for_test's already-accepted 'count only ever grows across the suite' cost -- bounded, inert bookkeeping, cannot produce UB or hand out a wrong pointer"
   ],
   [
-    "src/registry/heap_core/state/tcache_flush.rs::dbg_flush_all",
+    "crates/core/sefer-registry/src/registry/heap_core/state/tcache_flush.rs::dbg_flush_all",
     "calls the real production flush_all_tcache path used by ordinary teardown"
   ],
   [
-    "src/registry/heap_core/core.rs::dbg_populate_numa_cache_for_test",
+    "crates/core/sefer-registry/src/registry/heap_core/core.rs::dbg_populate_numa_cache_for_test",
     "calls the real production current_node_cached path via AllocCore; NUMA cache is a soft hint"
   ],
   [
-    "src/registry/heap_core/diag/queries.rs::dbg_drain_small_pool",
+    "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_drain_small_pool",
     "delegates to the real production AllocCore::drain_small_pool teardown-trim primitive (same as trim_for_recycle)"
   ],
   [
-    "src/registry/bootstrap/ensure.rs::dbg_set_inject_chunk_oom",
+    "crates/core/sefer-registry/src/registry/bootstrap/ensure.rs::dbg_set_inject_chunk_oom",
     "sets a plain AtomicBool test-injection flag only; no allocator metadata, no raw pointers, no soundness relevance — the flag makes ensure_chunk_slow's closure return None early, simulating an already-handled production OOM path"
   ],
   [
-    "src/global/fallback.rs::dbg_set_inject_fallback_init_panic",
+    "crates/core/sefer-registry/src/fallback.rs::dbg_set_inject_fallback_init_panic",
     "sets a plain AtomicBool test-injection flag only; no allocator metadata, no raw pointers, no soundness relevance — the flag makes heap_ptr panic before HeapCore::new, simulating an unwind out of the InitStateGuard'd region (R34-17/task #536)"
   ],
   [
-    "src/global/fallback.rs::dbg_panic_in_fallback_init_rolls_back",
+    "crates/core/sefer-registry/src/fallback.rs::dbg_panic_in_fallback_init_rolls_back",
     "drives a real panic through the production heap_ptr/InitStateGuard RAII path then re-calls heap_ptr to prove the state rolled back; exercises, does not bypass, existing safe machinery (R34-17/task #536)"
   ],
   [
-    "src/registry/heap_registry/claim.rs::dbg_set_inject_ctor_oom",
+    "crates/core/sefer-registry/src/registry/heap_registry/claim.rs::dbg_set_inject_ctor_oom",
     "sets a plain AtomicBool test-injection flag only; no allocator metadata, no raw pointers, no soundness relevance — the flag makes claim_impl's materialise call return None early, simulating an already-handled production OOM path (R6-T03)"
   ],
   [
@@ -404,7 +404,8 @@ export const REVIEWED_SURFACE = [
   // sizes return null, which is what the r6_t30 test drives (R6-T30).
   { id: 'crates/core/sefer-alloc-core/src/alloc_core/large/reservation_hooks.rs::dbg_alloc_large_for_test', kind: 'unsafe', reason: 'test-only forwarder into the real unsafe AllocCore::alloc_large with its identical caller contract (# Safety at the definition): align a non-zero power of two, size any usize (checked arithmetic returns null); takes no pointer argument, returns a fresh allocation or null', gates: ['internals'] },
   { id: 'crates/platform/sefer-platform/src/os.rs::commit_pages_for_measurement', kind: 'unsafe', reason: 'measurement-side twin of commit_pages: same caller contract (# Safety at the definition) over an allocator-owned segment reservation; bench-internals+internals gated', gates: ['bench-internals', 'internals', 'alloc-decommit'] },
-  { id: 'src/registry/heap_core/diag/queries.rs::dbg_sidecar_scan_measurement', kind: 'mutator', reason: 'thread-local optional diagnostic counts and original-versus-prefilter scan mode only; no pointers or allocator metadata access', gates: ['bench-internals', 'r18_sidecar_scan_bench'] },
+  { id: 'crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_reservation_for_test', kind: 'unsafe', reason: 'read-only reservation observer: resolves the canonical owner-table root before reading the header; caller guarantees an exact live allocation start in this heap with no conflicting borrow or segment retirement (# Safety at the definition)', gates: ['internals', 'bench-internals'] },
+  { id: 'crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_sidecar_scan_measurement', kind: 'mutator', reason: 'thread-local optional diagnostic counts and original-versus-prefilter scan mode only; no pointers or allocator metadata access', gates: ['bench-internals', 'r18_sidecar_scan_bench'] },
   ...[
     ['crates/core/sefer-segment/src/segment/support/segment_directory/segment_layout.rs', ['small_decommit_start', 'primordial_decommit_start', 'small_lazy_initial_commit', 'primordial_lazy_initial_commit'], 'observer', 'pure geometry forwarders'],
     ['crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_magazine.rs', ['refill_class', 'refill_class_bump', 'refill_class_bump_virgin'], 'mutator', 'delegates to allocation substrate; exclusive mutable core borrow'],
@@ -412,8 +413,8 @@ export const REVIEWED_SURFACE = [
     ['crates/containers/sefer-concurrent/src/epoch/epoch_region.rs', ['_set_slot_generation_for_tests'], 'mutator', 'vacant-slot generation boundary; mutable region borrow'],
     ['crates/containers/sefer-concurrent/src/sharded/sharded_region.rs', ['_reset_my_shard_binding_for_tests'], 'mutator', 'clears TLS routing cache, not occupied tokens; may consume additional claims'],
     ['crates/containers/sefer-concurrent/src/sharded/sharded_region.rs', ['_remote_free_queue_buffer_identity_for_tests', '_live_token_blocks_for_tests', '_tls_claim_count_for_tests', '_prune_claim_checks_for_tests'], 'observer', 'identity and atomic/TLS count observations'],
-    ['src/registry/bootstrap/ensure.rs', ['dbg_num_chunks'], 'observer', 'constant geometry'],
-    ['src/registry/heap_core/diag/diag_probes.rs', ['dbg_promotion_compiled', 'dbg_promotion_macro_gate'], 'observer', 'compile-time predicate'],
+    ['crates/core/sefer-registry/src/registry/bootstrap/ensure.rs', ['dbg_num_chunks'], 'observer', 'constant geometry'],
+    ['crates/core/sefer-registry/src/registry/heap_core/diag/diag_probes.rs', ['dbg_promotion_compiled', 'dbg_promotion_macro_gate'], 'observer', 'compile-time predicate'],
     ['src/global/maintenance_service.rs', ['passes_for_test', 'fallback_visits_for_test'], 'observer', 'atomic diagnostic counters'],
     ['src/global/maintenance_service.rs', ['wait_after_for_test'], 'mutator', 'locks/waits on production completion condition'],
     ['crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs', ['fail_next_registration_for_test'], 'mutator', 'TLS registration failure countdown; handled fallible path'],
@@ -458,7 +459,7 @@ export const REVIEWED_SURFACE = [
   { id: 'crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs::register', kind: 'unsafe', reason: 'pub unsafe fn: caller guarantees live owned reservation identity for the numeric key; pointer args are never dereferenced and the registration unlinks on drop (# Safety at the definition)', gates: ['internals'] },
   { id: 'crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs::lookup', kind: 'observer', reason: 'the real production lookup path; the pointer is only a numeric shard key, never dereferenced', gates: [] },
   { id: 'crates/core/sefer-segment/src/segment/segment_route/route_state/pin.rs::contains_payload', kind: 'observer', reason: 'pure span-geometry comparison of the caller pointer against the pinned entry bounds; no dereference', gates: [] },
-  { id: 'src/registry/heap_core/alloc/batch.rs::alloc_batch', kind: 'mutator', reason: 'production batch allocation path; writes issued block pointers into the caller-owned out slice', gates: [] },
+  { id: 'crates/core/sefer-registry/src/registry/heap_core/alloc/batch.rs::alloc_batch', kind: 'mutator', reason: 'production batch allocation path; writes issued block pointers into the caller-owned out slice', gates: [] },
   { id: 'crates/core/sefer-segment/src/segment/segment_table/impl_group/harness.rs::insert', kind: 'unsafe', reason: 'pub unsafe fn: inserted synthetic value becomes the harness table canonical root safe lookups return verbatim; caller contract at the # Safety doc', gates: [] },
   { id: 'crates/core/sefer-segment/src/segment/segment_table/impl_group/harness.rs::insert_root_for_key', kind: 'unsafe', reason: 'pub unsafe fn: root must carry valid provenance over its own address (safe lookups return it verbatim); key is an address-only key (# Safety at the definition)', gates: [] },
   { id: 'crates/core/sefer-segment/src/segment/segment_table/impl_group/harness.rs::remove_root_for_key', kind: 'mutator', reason: 'isolated numeric SegmentTable harness; synthetic keys never dereferenced', gates: [] },
@@ -480,8 +481,8 @@ export const REVIEWED_SURFACE = [
   { id: 'crates/platform/aligned-vmem/src/reservation_full_parts.rs::new', kind: 'observer', reason: 'pure field-by-field reconstruction of reservation parts; caller-owned pointers stored, never dereferenced', gates: [] },
   { id: 'crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_magazine.rs::flush_class', kind: 'unsafe', reason: 'exclusive caller-owned live blocks, exactly once; delegates to flush substrate', gates: ['internals'] },
   { id: 'crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_magazine.rs::refill_class_bump_internal', kind: 'mutator', reason: 'production batch-API refill wrapper; takes NO issue_state argument and hardcodes the safe StateByte::LIVE arm of the refill contract (every filled slot is handed straight to the caller); exclusive mutable core borrow; delegates to refill_class_bump_state_internal, whose class_idx contract is release-checked in SizeClasses::block_size', gates: [] },
-  { id: 'src/registry/bootstrap/ensure.rs::count_for_test', kind: 'mutator', reason: 'ensure may initialize registry; then monotonic count load', gates: [] },
-  { id: 'src/registry/heap_registry/maintenance.rs::maintenance_pass_for_test', kind: 'mutator', reason: 'production CAS-owned bounded maintenance pass', gates: ['internals'] },
+  { id: 'crates/core/sefer-registry/src/registry/bootstrap/ensure.rs::count_for_test', kind: 'mutator', reason: 'ensure may initialize registry; then monotonic count load', gates: [] },
+  { id: 'crates/core/sefer-registry/src/registry/heap_registry/maintenance.rs::maintenance_pass_for_test', kind: 'mutator', reason: 'production CAS-owned bounded maintenance pass', gates: ['internals'] },
   ...[
     ['backoff_spin_count_for_test', 'observer', ['loom']],
     ['retry_counts_for_test', 'observer', ['test-model']],

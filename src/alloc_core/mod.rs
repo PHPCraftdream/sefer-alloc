@@ -19,9 +19,9 @@
 //! `node::Node`) resolve when the P2.2 visibility pass retargets those call
 //! sites.
 
-// ── previously-public surface (unchanged `pub`, same cfg gates) ──
+// ── previously-public surface (public paths preserved with `internals`) ──
 #[cfg(feature = "alloc-core")]
-#[cfg(feature = "alloc-decommit")]
+#[cfg(all(feature = "alloc-decommit", feature = "internals"))]
 pub use sefer_alloc_core::alloc_core::large_cache_config;
 #[cfg(feature = "alloc-core")]
 #[cfg(feature = "alloc-decommit")]
@@ -48,12 +48,8 @@ pub use sefer_alloc_core::alloc_core::policy::{LargeCachePolicy, Profile, SmallP
 #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
 pub use sefer_alloc_core::alloc_core::reserved_small_segment::ReservedSmallSegment;
 #[cfg(feature = "alloc-core")]
-// Without `alloc-global` no lib code path reaches this `#[doc(hidden)]`
-// facade re-export (its only compiled consumers live in the
-// `alloc-global`-gated `registry`/`global` modules); the path itself stays
-// `alloc-core`-public for alloc-core-only consumers. Scoped allow, not a
-// blanket module-wide suppression (R6-T16 discipline).
-#[cfg_attr(not(feature = "alloc-global"), allow(unused_imports))]
+// The root facade only needs this module for internals callers and Kani proofs.
+#[cfg(any(feature = "internals", kani))]
 #[doc(hidden)]
 pub use sefer_alloc_core::alloc_core::segment_header;
 #[cfg(feature = "alloc-core")]
@@ -102,52 +98,15 @@ pub use sefer_alloc_core::alloc_core::{dbg_sidecar_reservation_stats, SidecarRes
 #[cfg(feature = "alloc-core")]
 #[cfg(feature = "alloc-global")]
 pub(crate) use sefer_alloc_core::alloc_core::fatal;
-// P2.2 os move: root consumers use the canonical `sefer_platform::os`
-// directly (`SEGMENT`, `reserve_depot_overflow`, `segment_base_of_ptr` all
-// resolve there), so the root no longer conduits the `alloc_core::os`
-// module from `sefer-alloc-core`.
-#[cfg(feature = "alloc-core")]
-pub(crate) use sefer_alloc_core::alloc_core::medium_promotion_reachable;
-#[cfg(feature = "alloc-core")]
-#[cfg(feature = "alloc-global")]
-pub(crate) use sefer_alloc_core::alloc_core::medium_promotion_unreachable;
-#[cfg(feature = "alloc-core")]
-#[cfg(feature = "alloc-global")]
-pub(crate) use sefer_alloc_core::alloc_core::record_exit_lock_giveup;
-#[cfg(feature = "alloc-core")]
-#[cfg(feature = "alloc-global")]
-pub(crate) use sefer_alloc_core::alloc_core::size_classes;
-#[cfg(feature = "alloc-core")]
 #[cfg(all(
-    feature = "alloc-global",
-    any(feature = "fastbin", feature = "medium-classes")
-))]
-pub(crate) use sefer_alloc_core::alloc_core::OwnedBlock;
-#[cfg(feature = "alloc-core")]
-#[cfg(any(feature = "alloc-global", feature = "alloc-stats"))]
-pub(crate) use sefer_alloc_core::alloc_core::FOREIGN_OR_UNROUTABLE_FREES;
-#[cfg(feature = "alloc-core")]
-#[cfg(feature = "alloc-global")]
-pub(crate) use sefer_alloc_core::alloc_core::LARGE_REMOTE_RETIREMENTS;
-#[cfg(feature = "alloc-core")]
-#[cfg(feature = "alloc-stats")]
-pub(crate) use sefer_alloc_core::alloc_core::LARGE_ZERO_PASS_CALLS;
-#[cfg(feature = "alloc-core")]
-#[cfg(all(
+    kani,
     feature = "alloc-global",
     feature = "fastbin",
-    any(feature = "internals", feature = "bench-internals")
+    feature = "alloc-decommit"
 ))]
-pub(crate) use sefer_alloc_core::alloc_core::LOCAL_REJECT_FREES;
-#[cfg(feature = "alloc-core")]
-#[cfg(all(feature = "alloc-global", feature = "internals"))]
-pub(crate) use sefer_alloc_core::alloc_core::MEDIUM_PROMOTION_REACHABLE;
-#[cfg(feature = "alloc-core")]
-#[cfg(all(feature = "alloc-stats", feature = "virgin-zero-skip"))]
-pub(crate) use sefer_alloc_core::alloc_core::SMALL_ZERO_PASS_CALLS;
-#[cfg(feature = "alloc-core")]
-#[cfg(all(feature = "alloc-global", feature = "bench-internals"))]
-pub(crate) use sefer_alloc_core::alloc_core::XNULL_NULL_TAIL_GUARD;
+pub(crate) use sefer_alloc_core::alloc_core::size_classes;
+#[cfg(feature = "alloc-global")]
+pub(crate) use sefer_alloc_core::alloc_core::LARGE_REMOTE_RETIREMENTS;
 #[cfg(feature = "alloc-core")]
 #[cfg(all(feature = "alloc-global", feature = "bench-internals"))]
 pub(crate) use sefer_alloc_core::alloc_core::{
@@ -165,32 +124,3 @@ pub(crate) use sefer_alloc_core::alloc_core::{
 pub(crate) use sefer_alloc_core::alloc_core::{
     BACKGROUND_INGRESS_STEP_CALLS, SIDECAR_INGRESS_DRAIN_CALLS, SIDECAR_INGRESS_RECORDS_CONSUMED,
 };
-#[cfg(feature = "alloc-core")]
-#[cfg(feature = "alloc-global")]
-pub(crate) use sefer_platform::os;
-#[cfg(feature = "alloc-core")]
-#[cfg(feature = "alloc-global")]
-pub(crate) use sefer_segment::segment::bitmap::state_byte;
-medium_promotion_reachable! {
-    #[cfg(feature = "alloc-core")]
-    #[cfg(feature = "bench-internals")]
-    pub(crate) use sefer_alloc_core::alloc_core::{
-        promotion_byte_bucket, PROMOTION_BYTES_HIST, PROMOTION_BYTES_MAX, PROMOTION_BYTES_MIN,
-        PROMOTION_BYTES_SUM, PROMOTION_COUNT,
-    };
-}
-
-// ── crate-internal `sefer-segment` compatibility shims ──
-// P2.2: the former `config`, `large`, `segment::bitmap` and `segment_table`
-// root shims were removed — `rg` confirmed no `alloc_core::`-path consumers
-// remain in the root tree (registry/global reference the canonical
-// `sefer_alloc_core`/`sefer_segment` crates or the explicit re-exports
-// above instead).
-#[cfg(feature = "alloc-core")]
-#[cfg(all(
-    feature = "alloc-core",
-    feature = "alloc-global",
-    feature = "bench-internals"
-))]
-#[doc(hidden)]
-pub(crate) use sefer_segment::segment::remote_bitmap;

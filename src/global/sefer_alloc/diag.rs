@@ -1,3 +1,5 @@
+use sefer_registry::registry;
+
 use crate::global::tls_heap::current_for_trim;
 #[cfg(all(feature = "bench-internals", feature = "internals"))]
 use crate::global::tls_heap::CurrentHeap;
@@ -8,17 +10,17 @@ use super::SeferAlloc;
 fn cache_hit_totals() -> (u64, u64) {
     #[cfg(all(feature = "alloc-decommit", feature = "fastbin"))]
     {
-        crate::registry::tcache_and_large_cache_hits_total()
+        registry::tcache_and_large_cache_hits_total()
     }
     #[cfg(not(all(feature = "alloc-decommit", feature = "fastbin")))]
     {
         #[cfg(feature = "fastbin")]
-        let tcache_hits = crate::registry::tcache_hits_total();
+        let tcache_hits = registry::tcache_hits_total();
         #[cfg(not(feature = "fastbin"))]
         let tcache_hits = 0;
 
         #[cfg(feature = "alloc-decommit")]
-        let large_cache_hits = crate::registry::large_cache_hits_total();
+        let large_cache_hits = registry::large_cache_hits_total();
         #[cfg(not(feature = "alloc-decommit"))]
         let large_cache_hits = 0;
 
@@ -28,6 +30,12 @@ fn cache_hit_totals() -> (u64, u64) {
 
 #[cfg(all(feature = "internals", feature = "bench-internals"))]
 impl SeferAlloc {
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_fallback_lock_spin_transition(spins: u32) -> (u32, bool) {
+        crate::global::fallback::dbg_fallback_lock_spin_transition(spins)
+    }
+
     /// B4 collapse diagnosis (docs/perf/B4_MT_COLLAPSE_DIAGNOSIS): snapshot of
     /// the slow-path observers added for this investigation. Order is
     /// positional and pinned by the probe; see the B4_* statics in
@@ -136,17 +144,9 @@ impl SeferAlloc {
         let CurrentHeapForDealloc::Own(heap) = current_for_dealloc() else {
             return None;
         };
-        // SAFETY: caller retains exclusive owner authority and the live
-        // allocation; only its canonical table root accesses reservation bytes.
-        let core = unsafe { &(*heap).core };
-        let root = core.canonical_root_for(ptr)?;
-        // SAFETY: `base` is the canonical registered segment root resolved under the allocator's table/route ownership protocol; the mapping stays live through this read (`SegmentHeader::read_at` # Safety).
-        let header = unsafe { crate::alloc_core::segment_header::SegmentHeader::read_at(root) };
-        Some((
-            header.reservation.addr(),
-            header.reservation_len,
-            root.addr(),
-        ))
+        // SAFETY: `Own` identifies this thread's live heap; the caller
+        // guarantees a live allocation with no conflicting borrow or retirement.
+        unsafe { (*heap).dbg_reservation_for_test(ptr) }
     }
 
     /// M-C oracle (Ph4c, receipt open question M-C): process-wide
@@ -213,8 +213,7 @@ impl SeferAlloc {
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_r1_01_cap_route_frees() -> u64 {
-        crate::registry::heap_core::diag::R1_01_CAP_ROUTE_FREES
-            .load(core::sync::atomic::Ordering::Relaxed)
+        registry::heap_core::dbg_r1_01_cap_route_frees()
     }
 }
 
@@ -296,14 +295,14 @@ impl SeferAlloc {
             segments_reserved_total: crate::alloc_core::AllocCore::segments_reserved_total(),
             segments_released_total: crate::alloc_core::AllocCore::segments_released_total(),
 
-            heaps_claimed_high_water: crate::registry::heaps_claimed_high_water() as u64,
+            heaps_claimed_high_water: registry::heaps_claimed_high_water() as u64,
 
             // Dropped-free counter (see `FOREIGN_OR_UNROUTABLE_FREES`).
             foreign_or_unroutable_frees: crate::alloc_core::AllocCore::foreign_or_unroutable_frees(
             ),
 
             #[cfg(feature = "alloc-decommit")]
-            config_conflicts: crate::registry::config_conflicts_total(),
+            config_conflicts: registry::config_conflicts_total(),
             #[cfg(not(feature = "alloc-decommit"))]
             config_conflicts: 0,
 

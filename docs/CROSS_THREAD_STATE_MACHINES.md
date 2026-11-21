@@ -272,7 +272,7 @@ The same small wrapper type is used over two different physical words;
 do not conflate them:
 
 - **The PHYSICAL owner-only Large reservation word.** `LargePhase`
-  (`src/alloc_core/segment/segment_header/terminal_words.rs:37-45`) packs
+  (`crates/core/sefer-segment/src/segment/segment_header/segment_header_impl/terminal_words.rs:37-45`) packs
   `Unused=0, Initializing=1, Live=2, Pending=3, Consuming=4, Cached=5,
   Released=6` with a generation (`pack_large_state`,
   `terminal_words.rs:48-51`). The owner drives it under its exclusive
@@ -302,8 +302,8 @@ do not conflate them:
   `reservation_state.rs:150-152`; `alloc_core_large.rs:482-487`).
 - **The INDEPENDENT `LargeState`-backed route descriptor word** — a
   `System`-allocated descriptor (`LargeState`,
-  `src/registry/segment_route/large_state.rs:8-64`; allocated by `System`
-  at registration, `src/registry/segment_route/directory.rs:69-75`;
+  `crates/core/sefer-segment/src/segment/segment_route/route_protocol/large_state.rs`; allocated by `System`
+  at registration, `crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs`;
   `LargeState::new()` starts at `Live` with generation 1,
   `large_state.rs:14-17`). This is the production
   **foreign-publication** path: a remote producer performs the terminal
@@ -311,20 +311,20 @@ do not conflate them:
   `Acquire` (`publish_pending`, `reservation_state.rs:44-59`; reached
   only through `registry::segment_route`, per
   `reservation_state.rs:41`, via `RoutePin::publish_large`,
-  `src/registry/segment_route/pin.rs:57-62`, and
+  `crates/core/sefer-segment/src/segment/segment_route/route_state/pin.rs`, and
   `LargeState::publish_pending`, `large_state.rs:24-28`). The owner's
   table-scan claim is `RouteSlots::claim_large_pending`
-  (`src/alloc_core/segment/segment_table/route_slots.rs:189-200`),
+  (`crates/core/sefer-segment/src/segment/segment_table/impl_group/routing/route_slots.rs:189-200`),
   driving `PENDING(g) → CONSUMING(g)` via `LargeState::claim_pending`
   (`large_state.rs:30-32`; `claim_pending`,
   `reservation_state.rs:67-88`; reached through
   `RouteRegistration::claim_large_pending`,
-  `src/registry/segment_route/registration.rs:51-53`). `AllocCore` then
+  `crates/core/sefer-segment/src/segment/segment_route/route_state/registration.rs`). `AllocCore` then
   separately claims the **PHYSICAL** reservation word
   `LIVE(g) → CONSUMING(g)` (`claim_live`,
   `alloc_core_large.rs:856-861`), unregisters the **TABLE** entry
   (`alloc_core_large.rs:889`; segment removal in
-  `src/alloc_core/segment/segment_table/segment_table_impl.rs:514-516`)
+  `crates/core/sefer-segment/src/segment/segment_table/impl_group/segment_table_impl.rs:514-516`)
   and drops the `RouteRegistration` (`RouteRegistration::drop →
   directory.remove`, `registration.rs:78-81`) **before** caching the
   physical reservation (`alloc_core_large.rs:938-965`). The unlinked old
@@ -357,7 +357,7 @@ do not conflate them:
   no allocator-origin root is accessible through a producer pin"
   (`pin.rs:4-5`; same distinction in
   `reservation_state.rs:19-20` and
-  `src/registry/segment_route/small_sidecar.rs:105-109`). What keeps the
+  `crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar.rs`). What keeps the
   physical reservation alive is the producer's unique *allocation*
   credit, transferred to the owner by the successful `Pending` CAS
   (`reservation_state.rs:31-40`).
@@ -382,7 +382,7 @@ do not conflate them:
 ### 9.2 Registration incarnation — a no-address capability, not stale-pointer validation
 
 Route directory entries carry a monotonically increasing `incarnation`
-(`next_incarnation`, `src/registry/segment_route/directory.rs:700,825-830`),
+(`next_incarnation`, `crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs`),
 stamped at registration. `lookup`
 (`directory.rs:868-888`) takes **only** the address — no expected old
 incarnation is supplied. Under one shard lock it pins the **current**
@@ -429,25 +429,22 @@ this text permits it, it does not assert that a runtime summary exists, and
 the shadow is not an actual-type lifetime/provenance proof. Large retains the `Live → Pending` CAS rule
 above. Nothing in production waits on, or is scheduled by, the producer
 after publication; the Miri-only pause gates
-(`src/registry/heap_core_xthread/routing.rs`,
+(`crates/core/sefer-registry/src/registry/heap_core_xthread/routing.rs`,
 `TerminalPublicationGate` under `cfg(miri)`,
-`src/registry/segment_route/terminal_publication_gate.rs`) are test
+`crates/core/sefer-segment/src/segment/segment_route/route_protocol/terminal_publication_gate.rs`) are test
 machinery, not production.
 
 ### 9.4 Typed heap lease — OWNED/FREE maintenance excludes paused OWNED
 
-Slot states are plain constants `STATE_EMPTY=0, STATE_OWNED=1,
-STATE_INITIALIZING=2, STATE_FREE=3, STATE_MAINTENANCE=4`
-(`src/registry/heap_slot.rs:89-99`). A successful state CAS grants exclusive
-mutation authority: recycled slots use `FREE → STATE_LIVE` (= OWNED)
-(`src/registry/heap_registry/claim.rs:239-244`); first claims use
-`EMPTY → INITIALIZING` (`claim.rs:221-234`) and publish
-`INITIALIZING → LIVE` after materialization (`claim.rs:295-306`). Both
-return a typed `HeapLease` (`claim.rs:339-344,459`). `STATE_LIVE → STATE_FREE`
-is published with `Release` only after all mutable accesses (`claim.rs:531`). The
-maintenance worker acquires a `MaintenanceLease` via `FREE →
-MAINTENANCE` only (`try_maintenance_at`, `claim.rs:83-95`; back-edge
-`MAINTENANCE → FREE` at `claim.rs:425-426`). Consequently the
+The `SlotState` discriminants are `Empty = 0`, `Live = 1` (owned),
+`Initializing = 2`, `Free = 3`, and `Maintenance = 4`
+(`crates/core/sefer-registry/src/registry/heap_slot.rs`). A successful state CAS grants exclusive mutation
+authority. In `crates/core/sefer-registry/src/registry/heap_registry/claim.rs`,
+`claim_impl` takes a recycled slot with `Free → Live` or initializes a
+fresh slot with `Empty → Initializing → Live`. Both return a typed
+`HeapLease`; its drop publishes `Live → Free` with Release after all
+mutable accesses. `try_maintenance_at` takes only `Free → Maintenance`;
+`MaintenanceLease` drop publishes `Maintenance → Free` with Release. Consequently the
 ownerless-maintenance guarantee is conditioned on the heap being `FREE`:
 a paused producer holding its heap in `OWNED` is **never** stolen by
 timeout (contract §1, `REMOTE_FREE_TERMINAL_PUBLICATION_CONTRACT.md`);
@@ -526,17 +523,17 @@ bit.
   consumed by it. Full-scan cuts do not clear summary words, so a bit seen
   after such a cut really is set. The `Release` on the summary RMW is
   required so an owner whose swap reads the hint also observes the pending
-  bit in its cut. Sources: `src/alloc_core/segment/remote_bitmap/sidecar_bitmap.rs`
-  (P1/P2/P3), `src/alloc_core/segment/remote_bitmap/bitmap_scan.rs` (cuts).
+  bit in its cut. Sources: `crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap.rs`
+  (P1/P2/P3), `crates/core/sefer-segment/src/segment/remote_bitmap/bitmap_scan.rs` (cuts).
 - **I2. Exactly-once consumption.** Both the pending and the summary
   acquisition are `swap(0, AcqRel)`; the cut semantics of §9.3 are unchanged
-  (`src/alloc_core/segment/remote_bitmap/bitmap_scan.rs`).
+  (`crates/core/sefer-segment/src/segment/remote_bitmap/bitmap_scan.rs`).
 - **I3. No premature finalization.** A stranded (not yet discovered)
   publication keeps its ledger credit; unchanged from §9.5/§9.3.
 - **I4. Lifetime.** The producer's P3 access touches only the sidecar
-  pinned by its `RoutePin` (`src/registry/segment_route/pin.rs`); the
+  pinned by its `RoutePin` (`crates/core/sefer-segment/src/segment/segment_route/route_state/pin.rs`); the
   sidecar is freed at the last pin
-  (`src/registry/segment_route/directory.rs`).
+  (`crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs`).
 - **I5. Summary words are never read as pending bits.** Owner metadata is
   ≥ 64 KiB (two 32 KiB per-granule bitmaps), so
   `payload_start_word ≥ SUMMARY_WORDS = 64`; metadata granules encode
@@ -544,19 +541,19 @@ bit.
   starts at or after the payload start (prerequisite Patch S: strict trim
   starts at the payload start; Gate S). Enforcement (future work per design
   §4.2, NOT yet in the tree): a `const` assert in
-  `src/registry/segment_route/small_sidecar.rs` that both metadata-end values
+  `crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar.rs` that both metadata-end values
   divided by 1 KiB are ≥ `SUMMARY_WORDS`, and a release-mode
   `start_word ≥ SUMMARY_WORDS` check in the future summary scanner. Geometry
-  sources: `src/alloc_core/segment/segment_header/segment_header_layout.rs`,
+  sources: `crates/core/sefer-segment/src/segment/segment_header/segment_header_layout.rs`,
   `src/alloc_core/segment/bitmap/segment_bitmap.rs` (owner metadata ≥ 64 KiB),
-  `src/alloc_core/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`
+  `crates/core/sefer-segment/src/segment/remote_bitmap/sidecar_bitmap/leaf_classes.rs`
   (4 KiB class leaves).
 - **I6. Isolation.** Segments that never adopt the hint protocol never
   execute P3 or a summary scan; a single default path means no per-segment
   mode tag is needed in the main design (the route-tag mechanism of design
   §1–2 belongs to the fallback flag path only;
-  `src/registry/segment_route/kind.rs`,
-  `src/registry/segment_route/directory.rs`).
+  `crates/core/sefer-segment/src/segment/segment_route/route_protocol/kind.rs`,
+  `crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs`).
 - **I7. Dropped out-of-range bits are harmless.** Words below the scan
   start never carry content; words at or above the high-water mark cannot
   (bump only grows while credit is outstanding).

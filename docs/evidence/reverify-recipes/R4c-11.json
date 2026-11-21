@@ -28,7 +28,7 @@
     }
   ],
   "mutant": {
-    "file": "src/registry/heap_registry/claim.rs",
+    "file": "crates/core/sefer-registry/src/registry/heap_registry/claim.rs",
     "find": "let generation = slot.generation.fetch_add(1, Ordering::Release) + 1;",
     "replace": "let generation = 0;",
     "steps": [

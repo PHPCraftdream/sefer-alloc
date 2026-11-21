@@ -1,0 +1,54 @@
+[package]
+name = "sefer-registry"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.93"
+license = "MIT OR Apache-2.0"
+description = "The sefer allocator heap registry, heap ownership and cross-thread routing, and process-global fallback heap."
+readme = "README.md"
+repository = "https://github.com/PHPCraftdream/sefer-alloc"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/core/sefer-registry"
+documentation = "https://docs.rs/sefer-registry"
+keywords = ["allocator", "memory", "registry", "concurrency"]
+categories = ["memory-management", "concurrency"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = []
+# Keep the moved cfg names. Forward substrate gates here too so standalone
+# package rows don't rely on feature unification with sefer-alloc.
+alloc-core = ["dep:sefer-alloc-core", "sefer-alloc-core?/alloc-core"]
+alloc-decommit = ["alloc-core", "sefer-alloc-core?/alloc-decommit"]
+alloc-global = ["alloc-core", "alloc-xthread", "dep:aligned-vmem", "dep:once-ptr-cell", "dep:sefer-ghost", "dep:sefer-platform", "dep:sefer-segment", "sefer-alloc-core?/alloc-global"]
+alloc-segment-directory = ["alloc-core", "sefer-alloc-core?/alloc-segment-directory"]
+alloc-stats = ["alloc-core", "sefer-alloc-core?/alloc-stats"]
+alloc-xthread = ["alloc-core", "sefer-alloc-core?/alloc-xthread"]
+batch-api = ["alloc-core", "sefer-alloc-core?/batch-api"]
+bench-internals = ["sefer-alloc-core?/bench-internals"]
+exact-span-large = ["alloc-core", "sefer-alloc-core?/exact-span-large"]
+fastbin = ["alloc-global", "alloc-xthread", "sefer-alloc-core?/fastbin"]
+hardened = ["fastbin", "misuse-checks", "sefer-alloc-core?/hardened"]
+internals = ["sefer-alloc-core?/internals"]
+large-cache-extended = ["alloc-decommit", "sefer-alloc-core?/large-cache-extended"]
+large-reserved-capacity = ["exact-span-large", "sefer-alloc-core?/large-reserved-capacity"]
+lazy-commit-fault-injection = ["alloc-core", "aligned-vmem?/fault-injection", "sefer-alloc-core?/lazy-commit-fault-injection"]
+medium-classes = ["alloc-core", "sefer-alloc-core?/medium-classes"]
+misuse-checks = ["sefer-alloc-core?/misuse-checks"]
+numa-aware = ["alloc-core", "sefer-alloc-core?/numa-aware"]
+primordial-lazy-commit = ["alloc-core", "sefer-alloc-core?/primordial-lazy-commit"]
+virgin-zero-skip = ["alloc-decommit", "sefer-alloc-core?/virgin-zero-skip"]
+
+[dependencies]
+aligned-vmem = { path = "../../platform/aligned-vmem", version = "0.2", optional = true, default-features = false }
+once-ptr-cell = { path = "../../primitives/once-ptr-cell", version = "0.1", optional = true }
+sefer-alloc-core = { path = "../sefer-alloc-core", version = "0.1", optional = true, default-features = false }
+sefer-ghost = { path = "../../primitives/sefer-ghost", version = "0.1", optional = true }
+sefer-platform = { workspace = true, optional = true }
+sefer-segment = { path = "../sefer-segment", version = "0.1", optional = true, default-features = false }
+
+[lints.rust]
+unsafe_code = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)', 'cfg(miri)', 'cfg(sefer_ghost)', 'cfg(r18_sidecar_scan_bench)', 'cfg(r19_sidecar_summary_oracle)'] }

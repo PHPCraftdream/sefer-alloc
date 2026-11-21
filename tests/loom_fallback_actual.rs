@@ -1,5 +1,6 @@
 //! G6d (`docs/GHOST_CHECKS_PLAN.md`, P19): actual-source loom model of the
-//! fallback heap's one-time init and its lock (`src/global/fallback.rs`).
+//! fallback heap's one-time init and its lock
+//! (`crates/core/sefer-registry/src/fallback.rs`).
 //! The real file takes its sync primitives from `super`; this root binds them
 //! to loom and stands in for `HeapCore` with a loom cell every closure
 //! writes, so a heap access not ordered by the READY publication or by the
@@ -142,7 +143,7 @@ static INITS: StdUsize = StdUsize::new(0);
 
 mod registry {
     pub(crate) mod fallback_hook {
-        include!("../src/registry/fallback_hook.rs");
+        include!("../crates/core/sefer-registry/src/registry/fallback_hook.rs");
     }
 
     /// Stand-in heap: one loom cell every closure writes.
@@ -171,7 +172,7 @@ mod registry {
     }
 }
 
-#[path = "../src/global/fallback.rs"]
+#[path = "../crates/core/sefer-registry/src/fallback.rs"]
 mod fallback;
 
 use loom::thread;

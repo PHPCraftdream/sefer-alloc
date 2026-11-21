@@ -2,29 +2,29 @@ use std::fs;
 use std::path::Path;
 
 const IN_SCOPE: &[&str] = &[
-    "src/registry/heap_core/free/dealloc.rs",
-    "src/registry/heap_core/free/dealloc_batch.rs",
-    "src/registry/heap_core/alloc/batch.rs",
-    "src/registry/heap_core/alloc/hot.rs",
-    "src/registry/heap_core/state/tcache.rs",
+    "crates/core/sefer-registry/src/registry/heap_core/free/dealloc.rs",
+    "crates/core/sefer-registry/src/registry/heap_core/free/dealloc_batch.rs",
+    "crates/core/sefer-registry/src/registry/heap_core/alloc/batch.rs",
+    "crates/core/sefer-registry/src/registry/heap_core/alloc/hot.rs",
+    "crates/core/sefer-registry/src/registry/heap_core/state/tcache.rs",
     "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small/directory.rs",
-    "src/registry/heap_core/diag/mod.rs",
-    "src/registry/heap_core/diag/diag_probes.rs",
+    "crates/core/sefer-registry/src/registry/heap_core/diag/mod.rs",
+    "crates/core/sefer-registry/src/registry/heap_core/diag/diag_probes.rs",
     "crates/core/sefer-segment/src/segment/segment_header/segment_header_impl/segment_header_impl.rs",
-    "src/registry/heap_core/core.rs",
+    "crates/core/sefer-registry/src/registry/heap_core/core.rs",
     "crates/core/sefer-policy/src/large_cache_config.rs",
     "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/mod.rs",
     "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_impl.rs",
     "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/lifecycle_parts/lifecycle.rs",
     "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/mod.rs",
     "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs",
-    "src/registry/bootstrap/chunk.rs",
+    "crates/core/sefer-registry/src/registry/bootstrap/chunk.rs",
     "src/global/tls_heap.rs",
     "crates/core/sefer-segment/src/segment/segment_header/segment_header_impl/layout_asserts.rs",
-    "src/registry/bootstrap/ensure.rs",
+    "crates/core/sefer-registry/src/registry/bootstrap/ensure.rs",
     "crates/core/sefer-segment/src/segment/segment_header/segment_header_layout.rs",
     "crates/core/sefer-alloc-core/src/alloc_core/small/reserved_small_segment.rs",
-    "src/registry/heap_core/free/realloc.rs",
+    "crates/core/sefer-registry/src/registry/heap_core/free/realloc.rs",
     "crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large.rs",
 ];
 
@@ -112,7 +112,10 @@ fn r6_t17_scoped_doc_contracts() {
             "global allocator docs must not claim {phrase}"
         );
     }
-    let bootstrap = comments(&read(root, "src/registry/bootstrap/mod.rs"));
+    let bootstrap = comments(&read(
+        root,
+        "crates/core/sefer-registry/src/registry/bootstrap/mod.rs",
+    ));
     for phrase in [
         "OncePtrCell",
         "leak_zeroed_pages",
@@ -125,7 +128,11 @@ fn r6_t17_scoped_doc_contracts() {
         );
     }
     assert!(
-        comments(&read(root, "src/registry/heap_registry/claim.rs")).contains("get_unchecked"),
+        comments(&read(
+            root,
+            "crates/core/sefer-registry/src/registry/heap_registry/claim.rs"
+        ))
+        .contains("get_unchecked"),
         "claim safety docs must explain get_unchecked"
     );
 }

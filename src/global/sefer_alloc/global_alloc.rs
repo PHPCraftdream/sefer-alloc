@@ -140,7 +140,7 @@ unsafe impl GlobalAlloc for SeferAlloc {
             CurrentHeapForDealloc::ForeignNoBind => {
                 // SAFETY: the GlobalAlloc caller transfers its unique current
                 // allocation. Lookup and publication use only independent sidecars.
-                unsafe { crate::registry::HeapCore::publish_foreign(ptr, layout) };
+                unsafe { sefer_registry::registry::HeapCore::publish_foreign(ptr, layout) };
             }
         }
     }

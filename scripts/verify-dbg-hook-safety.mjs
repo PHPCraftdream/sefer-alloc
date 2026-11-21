@@ -29,7 +29,7 @@ const CURRENT_RESERVATION_HOOK = "src/global/sefer_alloc/diag.rs::dbg_current_re
 const UNSAFE_HOOKS = [
   "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_stamp_segment_id",
   "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/header_diag.rs::dbg_stamp_kind_byte",
-  "src/registry/heap_core/diag/queries.rs::dbg_stamp_kind_byte",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/queries.rs::dbg_stamp_kind_byte",
   "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_unregister",
   "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/table_diag.rs::dbg_recycle",
   "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_diag.rs::dbg_drain_freelist_batch",
@@ -44,18 +44,18 @@ const UNSAFE_HOOKS = [
   "crates/core/sefer-alloc-core/src/alloc_core/small/alloc_core_small_pool/decommit.rs::dbg_force_decommit_retain_for",
   "src/global/sefer_alloc/global_alloc.rs::dbg_dealloc_while_fallback_lock_held",
   "src/global/tls_heap.rs::dbg_restore_local_for_test",
-  "src/registry/bootstrap/registry.rs::dbg_slot_preset_generation",
-  "src/registry/heap_core/diag/diag_probes.rs::dbg_dealloc_own_thread_with_base",
-  "src/registry/heap_core/diag/diag_probes.rs::dbg_flush_class_only",
-  "src/registry/heap_core/diag/diag_probes.rs::dbg_clear_magazine_on_hit",
-  "src/registry/heap_core/diag/diag_probes.rs::dbg_decomp_decommit_payload",
-  "src/registry/heap_core/diag/diag_probes.rs::dbg_decomp_recommit_payload",
-  "src/registry/heap_core/diag/diag_probes.rs::dbg_decomp_release",
-  "src/registry/heap_core/diag/diag_probes.rs::dbg_decomp_win_commit_only",
-  "src/registry/heap_core/diag/diag_probes.rs::dbg_decomp_win_release_only",
+  "crates/core/sefer-registry/src/registry/bootstrap/registry.rs::dbg_slot_preset_generation",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/diag_probes.rs::dbg_dealloc_own_thread_with_base",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/diag_probes.rs::dbg_flush_class_only",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/diag_probes.rs::dbg_clear_magazine_on_hit",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/diag_probes.rs::dbg_decomp_decommit_payload",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/diag_probes.rs::dbg_decomp_recommit_payload",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/diag_probes.rs::dbg_decomp_release",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/diag_probes.rs::dbg_decomp_win_commit_only",
+  "crates/core/sefer-registry/src/registry/heap_core/diag/diag_probes.rs::dbg_decomp_win_release_only",
   "crates/core/sefer-alloc-core/src/alloc_core/alloc_core/lifecycle_parts/sidecar_test_hooks.rs::dbg_publish_small_sidecar_free",
-  "src/registry/heap_core_xthread/sidecar_drain.rs::dbg_publish_small_sidecar_free",
-  "src/registry/heap_core_xthread/sidecar_drain.rs::dbg_reclaim_sidecar_record_for_test",
+  "crates/core/sefer-registry/src/registry/heap_core_xthread/sidecar_drain.rs::dbg_publish_small_sidecar_free",
+  "crates/core/sefer-registry/src/registry/heap_core_xthread/sidecar_drain.rs::dbg_reclaim_sidecar_record_for_test",
   CURRENT_RESERVATION_HOOK
 ];
 const SIDECAR_UNSAFE_HOOKS = new Set(UNSAFE_HOOKS.filter(id => /::dbg_(?:publish_small_sidecar_free|reclaim_sidecar_record_for_test)$/.test(id)));
@@ -276,7 +276,7 @@ export function verifyHooks(files, policy = {}) {
     const row = (policy.surface ?? REVIEWED_SURFACE).find(row => row.id === hook.id);
     if (row) for (const feature of row.gates) if (!requires(feature)) errors.push(`reviewed hook missing ${feature} gate: ${hook.id}`);
     for (const attr of hook.attrs) if (invalidBenchAttribute(attr)) errors.push(`non-gating bench cfg/cfg_attr: ${hook.id}: ${attr}`);
-    if (hook.id === 'src/global/fallback.rs::dbg_fallback_lock_spin_transition') for (const feature of ['internals', 'bench-internals']) if (!requires(feature)) errors.push(`pure transition missing ${feature} gate: ${hook.id}`);
+    if (hook.id === 'crates/core/sefer-registry/src/fallback.rs::dbg_fallback_lock_spin_transition') for (const feature of ['internals', 'bench-internals']) if (!requires(feature)) errors.push(`pure transition missing ${feature} gate: ${hook.id}`);
     if (hook.unsafe) {
       foundUnsafe.add(hook.id);
       if (!/^\s*\/\/\/\s*# Safety\s*$/m.test(hook.docs)) errors.push(`unsafe hook lacks its # Safety contract: ${hook.id}`);
@@ -320,10 +320,10 @@ function handAuthoredCheck() {
   assert(sidecarErrors(ownerSource.replace('all(feature = "internals", feature = "bench-internals")', 'feature = "internals"')).includes(`reviewed hook missing bench-internals gate: ${sidecar}::owner_state_for_test`));
   assert(sidecarErrors(ownerSource.replace('all(feature = "internals", feature = "bench-internals")', 'feature = "bench-internals"')).includes(`reviewed hook missing internals gate: ${sidecar}::owner_state_for_test`));
 
-  const chunks = 'src/registry/bootstrap/ensure.rs';
+  const chunks = 'crates/core/sefer-registry/src/registry/bootstrap/ensure.rs';
   check(chunks, '#[cfg(feature = "internals")]\npub const fn dbg_num_chunks() -> usize { 4 }', [['dbg_num_chunks', null, false]]);
   assert(verifyHooks(new Map([[chunks, scanFile(chunks, 'pub const fn dbg_num_chunks() -> usize { 4 }')]])).errors.includes(`reviewed hook missing internals gate: ${chunks}::dbg_num_chunks`));
-  const probes = 'src/registry/heap_core/diag/diag_probes.rs';
+  const probes = 'crates/core/sefer-registry/src/registry/heap_core/diag/diag_probes.rs';
   check(probes, 'impl HeapCore { #[cfg(feature = "internals")] pub const fn dbg_promotion_compiled() -> bool { false } }', [['dbg_promotion_compiled', 'HeapCore', false]]);
   assert(verifyHooks(new Map([[probes, scanFile(probes, 'impl HeapCore { pub const fn dbg_promotion_compiled() -> bool { false } }')]])).errors.includes(`reviewed hook missing internals gate: ${probes}::dbg_promotion_compiled`));
 
@@ -396,7 +396,7 @@ function handAuthoredCheck() {
     `reviewed hook missing internals gate: ${sharded}::_set_remote_free_hint_for_tests`,
   ]);
   // Actual bootstrap module/file relationship, with no item-level gate.
-  const parent = 'src/registry/bootstrap/mod.rs';
+  const parent = 'crates/core/sefer-registry/src/registry/bootstrap/mod.rs';
   const files = new Map([
     [parent, scanFile(parent, '#[cfg(feature = "internals")] mod ensure;')],
     [chunks, scanFile(chunks, 'pub const fn dbg_num_chunks() -> usize { 4 }')],
@@ -405,7 +405,7 @@ function handAuthoredCheck() {
   files.set(parent, scanFile(parent, '#[cfg(any(feature = "internals", feature = "production"))] mod ensure;'));
   assert(verifyHooks(files).errors.includes(`reviewed hook missing internals gate: ${chunks}::dbg_num_chunks`));
   files.set(parent, scanFile(parent, '#[cfg(feature = "internals")] mod ensure;'));
-  files.set('src/registry/bootstrap/alternate.rs', scanFile('src/registry/bootstrap/alternate.rs', '#[path = "ensure.rs"] mod ensure;'));
+  files.set('crates/core/sefer-registry/src/registry/bootstrap/alternate.rs', scanFile('crates/core/sefer-registry/src/registry/bootstrap/alternate.rs', '#[path = "ensure.rs"] mod ensure;'));
   assert(verifyHooks(files).errors.includes(`reviewed hook missing internals gate: ${chunks}::dbg_num_chunks`));
 
   // const unsafe is used by globalalloc-model; unsafe const is inventoried
@@ -531,7 +531,7 @@ function selfCheck() {
   assert(observerErrors.includes(`measurement-only unsafe hook is not bench-internals-gated: ${CURRENT_RESERVATION_HOOK}`));
   const observerBenchOnly = scanFile(observerFile, '/// # Safety\n/// Caller owns the live allocation.\n#[cfg(feature = "bench-internals")]\npub unsafe fn dbg_current_reservation_for_test(ptr: *mut u8) {}');
   assert(verifyHooks(new Map([[observerFile, observerBenchOnly]])).errors.includes(`reservation observer is not internals-gated: ${CURRENT_RESERVATION_HOOK}`));
-  const pureFile = 'src/global/fallback.rs';
+  const pureFile = 'crates/core/sefer-registry/src/fallback.rs';
   const pureId = `${pureFile}::dbg_fallback_lock_spin_transition`;
   const pureHook = scanFile(pureFile, '#[cfg(all(feature = "internals", feature = "bench-internals"))]\nimpl SeferAlloc { pub fn dbg_fallback_lock_spin_transition(spins: u32) -> (u32, bool) { (spins, false) } }');
   assert.equal(pureHook.hooks.length, 1);

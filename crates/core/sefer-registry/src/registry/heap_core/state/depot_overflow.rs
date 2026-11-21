@@ -1,0 +1,777 @@
+//! G1-K7: depot overflow — full magazines parked above the per-class depot
+//! floor, within a per-heap byte budget, in a lazily committed reservation.
+//!
+//! The control ([`DepotOverflow`]) lives in the slot's `Depot` and is valid
+//! all-zero (empty, nothing reserved). The reservation holds only records:
+//! per class a page-aligned region of `cap[c]` records forming a ring — new
+//! records go to the tail, reload takes the tail (LIFO with the floor below),
+//! decay takes the head (oldest). A class's ring length is
+//! `PerClass::parked - DEPOT_K[c]`, also kept here (`len`) so a cold event
+//! costs O(1).
+
+use crate::alloc_core::size_classes::{SIZE_CLASS_TABLE, SMALL_CLASS_COUNT};
+use crate::registry::heap_core::state::depot::DEPOT_CLASSES;
+use crate::registry::heap_core::state::tcache::TCACHE_CAP;
+
+type Mag = [*mut u8; TCACHE_CAP];
+const REC: usize = core::mem::size_of::<Mag>();
+/// Cold events per decay epoch at least (the epoch also spans twice the
+/// occupied records, so a full park/reload cycle fits in one epoch).
+pub(crate) const EPOCH_MIN: u32 = 256;
+/// Decay flushes at most this many records per cold event.
+pub(crate) const DECAY_WORK: u32 = 4;
+/// Overflow reloads per bounded remote-ingress check.
+pub(crate) const INGRESS_PERIOD: u32 = 8;
+
+/// TEST-ONLY fault hook: the next `n` overflow reservations fail as if the
+/// OS refused them (the commit side uses `aligned-vmem`'s own hook).
+#[cfg(feature = "lazy-commit-fault-injection")]
+pub(crate) static RESERVE_FAIL_NEXT: core::sync::atomic::AtomicU32 =
+    core::sync::atomic::AtomicU32::new(0);
+
+#[cfg(feature = "lazy-commit-fault-injection")]
+#[allow(deprecated)] // `fetch_update` is deprecated for `try_update`, which needs a newer MSRV.
+fn reserve_fault_fires() -> bool {
+    use core::sync::atomic::Ordering::Relaxed;
+    RESERVE_FAIL_NEXT
+        .fetch_update(Relaxed, Relaxed, |n| n.checked_sub(1))
+        .is_ok()
+}
+
+const _: () = assert!(REC == 128);
+const _: () = assert!(DEPOT_CLASSES <= 32);
+const _: () = assert!(SMALL_CLASS_COUNT <= 64);
+
+/// Every small class (bit `c`): the classes a segment refill can tick for.
+pub const ALL_SMALL: u64 = if SMALL_CLASS_COUNT == 64 {
+    u64::MAX
+} else {
+    (1u64 << SMALL_CLASS_COUNT) - 1
+};
+
+/// Owner-only counters (diagnostics; read through `bench-internals` hooks).
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub(crate) struct OverflowStats {
+    pub(crate) parks: u64,
+    pub(crate) reloads: u64,
+    pub(crate) budget_refusals: u64,
+    pub(crate) os_refusals: u64,
+    pub(crate) decay_flushed: u64,
+    pub(crate) ingress_checks: u64,
+    /// Decommit calls issued (not proof the OS dropped the pages).
+    pub(crate) decommits: u64,
+    /// Parks that set segment-refill tick flags ([`DepotOverflow::arm`]).
+    pub(crate) arms: u64,
+    /// Segment refills that found the overflow empty and dropped their
+    /// class's tick flag ([`DepotOverflow::disarm`]).
+    pub(crate) disarms: u64,
+}
+
+/// Overflow control; all-zero = empty and unreserved. The per-event fields
+/// lead (`repr(C)`), so the common tick touches one line.
+#[repr(C)]
+pub struct DepotOverflow {
+    base: *mut u8,
+    bytes: usize,
+    /// Small classes whose `PerClass::marks` carries `MARK_TICK` (bit `c`).
+    /// Invariant: `bytes > 0` implies every small class is armed.
+    armed: u64,
+    events: u32,
+    epoch_len: u32,
+    /// Classes with decay debt (bit `c`).
+    debt_mask: u32,
+    /// Classes that parked during the current epoch (bit `c`).
+    parked_in_epoch: u32,
+    /// Classes whose `PerClass::limit` is latched after a refusal (bit `c`).
+    starved: u32,
+    reloads_since_ingress: u32,
+    reserve_failed: bool,
+    len: [u16; DEPOT_CLASSES],
+    head: [u16; DEPOT_CLASSES],
+    cap: [u16; DEPOT_CLASSES],
+    low: [u16; DEPOT_CLASSES],
+    debt: [u16; DEPOT_CLASSES],
+    off: [u32; DEPOT_CLASSES],
+    committed: [u32; DEPOT_CLASSES],
+    pub(crate) stats: OverflowStats,
+}
+
+const fn mag_bytes(c: usize) -> usize {
+    SIZE_CLASS_TABLE[c] * TCACHE_CAP
+}
+
+#[cfg(kani)]
+#[allow(unsafe_code)]
+impl DepotOverflow {
+    /// # Safety
+    /// The class, count, backing storage and budget must satisfy the ring
+    /// invariants: n is the current length, and the budget must not require
+    /// changing the reservation behind a caller-owned backing buffer.
+    pub unsafe fn kani_park(&mut self, c: usize, n: usize, mag: &Mag, budget: usize) -> bool {
+        self.park(c, n, mag, budget)
+    }
+
+    /// # Safety
+    /// Class c must have exactly n > 0 live records in valid backing storage.
+    pub unsafe fn kani_reload(&mut self, c: usize, n: usize, out: &mut Mag) {
+        self.reload(c, n, out);
+    }
+
+    /// # Safety
+    /// Class c must have exactly n > 0 live records in valid backing storage.
+    pub unsafe fn kani_pop_oldest(&mut self, c: usize, n: usize, out: &mut Mag) {
+        self.pop_oldest(c, n, out);
+    }
+}
+
+impl DepotOverflow {
+    /// Kani-only: the all-zero empty overflow an OS-zeroed slot holds.
+    #[cfg(kani)]
+    pub(crate) const fn empty() -> Self {
+        Self {
+            base: core::ptr::null_mut(),
+            bytes: 0,
+            armed: 0,
+            events: 0,
+            epoch_len: 0,
+            debt_mask: 0,
+            parked_in_epoch: 0,
+            starved: 0,
+            reloads_since_ingress: 0,
+            reserve_failed: false,
+            len: [0; DEPOT_CLASSES],
+            head: [0; DEPOT_CLASSES],
+            cap: [0; DEPOT_CLASSES],
+            low: [0; DEPOT_CLASSES],
+            debt: [0; DEPOT_CLASSES],
+            off: [0; DEPOT_CLASSES],
+            committed: [0; DEPOT_CLASSES],
+            stats: OverflowStats {
+                parks: 0,
+                reloads: 0,
+                budget_refusals: 0,
+                os_refusals: 0,
+                decay_flushed: 0,
+                ingress_checks: 0,
+                decommits: 0,
+                arms: 0,
+                disarms: 0,
+            },
+        }
+    }
+
+    /// Kani-only: an overflow whose class `c` ring of `cap` records lives,
+    /// fully committed, at `base` (a local buffer of `cap` records).
+    ///
+    /// # Safety
+    /// `base` must point to writable, initialized, pointer-aligned record
+    /// storage of the specified (or copied) capacity. It must stay live and
+    /// exclusively accessible to this ring while any record is accessed.
+    #[cfg(kani)]
+    #[allow(unsafe_code)]
+    pub unsafe fn kani_on_buffer(base: *mut u8, c: usize, cap: u16) -> Self {
+        let mut o = Self::empty();
+        o.base = base;
+        o.cap[c] = cap;
+        o.committed[c] = cap as u32 * REC as u32;
+        o.epoch_len = EPOCH_MIN;
+        o
+    }
+
+    /// Kani-only: an overflow over `base` (a buffer of `cap` records, class
+    /// `c`) in an arbitrary state of its representation invariants — the
+    /// ring (`len`, `head`), commit watermark, parked bytes, decay epoch and
+    /// debt, latch and ingress counters are all symbolic. Only class `c` has
+    /// a ring; `bytes` may exceed its share (other classes' records).
+    ///
+    /// # Safety
+    /// `base` must point to writable, initialized, pointer-aligned record
+    /// storage of the specified (or copied) capacity. It must stay live and
+    /// exclusively accessible to this ring while any record is accessed.
+    #[cfg(kani)]
+    #[allow(unsafe_code)]
+    pub unsafe fn kani_symbolic(base: *mut u8, c: usize, cap: u16) -> Self {
+        let mut o = Self::empty();
+        o.base = base;
+        o.cap[c] = cap;
+        let n: u16 = kani::any();
+        kani::assume(n <= cap);
+        o.len[c] = n;
+        let head: u16 = kani::any();
+        kani::assume(head < cap);
+        o.head[c] = head;
+        let committed: u32 = kani::any();
+        kani::assume(committed as usize <= cap as usize * REC);
+        o.committed[c] = committed;
+        let others: usize = kani::any();
+        kani::assume(others <= 1 << 20);
+        o.bytes = n as usize * mag_bytes(c) + others;
+        // `bytes > 0` implies every small class is armed.
+        o.armed = if o.bytes > 0 {
+            ALL_SMALL
+        } else {
+            kani::any::<u64>() & ALL_SMALL
+        };
+        let epoch_len: u32 = kani::any();
+        kani::assume(epoch_len >= EPOCH_MIN && epoch_len <= u32::MAX / 2);
+        o.epoch_len = epoch_len;
+        let events: u32 = kani::any();
+        kani::assume(events < epoch_len);
+        o.events = events;
+        o.debt_mask = kani::any();
+        // `debt_mask` bit `c` <=> `debt[c] != 0`, and debt never exceeds the ring.
+        let debt: u16 = kani::any();
+        kani::assume(debt <= n);
+        kani::assume((debt != 0) == (o.debt_mask >> c & 1 != 0));
+        o.debt[c] = debt;
+        let low: u16 = kani::any();
+        kani::assume(low <= n);
+        o.low[c] = low;
+        o.parked_in_epoch = kani::any();
+        o.starved = kani::any();
+        let since: u32 = kani::any();
+        kani::assume(since < INGRESS_PERIOD);
+        o.reloads_since_ingress = since;
+        o
+    }
+
+    /// Kani-only: a field-for-field copy of `self` over `base`.
+    ///
+    /// # Safety
+    /// `base` must point to writable, initialized, pointer-aligned record
+    /// storage of the specified (or copied) capacity. It must stay live and
+    /// exclusively accessible to this ring while any record is accessed.
+    #[cfg(kani)]
+    #[allow(unsafe_code)]
+    pub unsafe fn kani_copy(&self, base: *mut u8) -> Self {
+        Self {
+            base,
+            bytes: self.bytes,
+            armed: self.armed,
+            events: self.events,
+            epoch_len: self.epoch_len,
+            debt_mask: self.debt_mask,
+            parked_in_epoch: self.parked_in_epoch,
+            starved: self.starved,
+            reloads_since_ingress: self.reloads_since_ingress,
+            reserve_failed: self.reserve_failed,
+            len: self.len,
+            head: self.head,
+            cap: self.cap,
+            low: self.low,
+            debt: self.debt,
+            off: self.off,
+            committed: self.committed,
+            stats: self.stats,
+        }
+    }
+
+    /// Kani-only: every control field of `self` equals `other`'s (the base
+    /// pointers aside).
+    #[cfg(kani)]
+    pub fn kani_same_controls(&self, other: &Self) -> bool {
+        // Element-wise, not `==` on the arrays: array equality lowers to a
+        // `memcmp` loop that needs an unwind bound of its byte length.
+        let mut k = 0;
+        while k < DEPOT_CLASSES {
+            if self.len[k] != other.len[k]
+                || self.head[k] != other.head[k]
+                || self.cap[k] != other.cap[k]
+                || self.low[k] != other.low[k]
+                || self.debt[k] != other.debt[k]
+                || self.off[k] != other.off[k]
+                || self.committed[k] != other.committed[k]
+            {
+                return false;
+            }
+            k += 1;
+        }
+        self.bytes == other.bytes
+            && self.armed == other.armed
+            && self.events == other.events
+            && self.epoch_len == other.epoch_len
+            && self.debt_mask == other.debt_mask
+            && self.parked_in_epoch == other.parked_in_epoch
+            && self.starved == other.starved
+            && self.reloads_since_ingress == other.reloads_since_ingress
+            && self.reserve_failed == other.reserve_failed
+            && self.stats == other.stats
+    }
+
+    /// After a successful park: the small classes not yet armed (bit `c`) —
+    /// the caller sets their `MARK_TICK` — and every class is armed from here.
+    #[inline(always)]
+    pub fn arm(&mut self) -> u64 {
+        debug_assert!(self.bytes != 0, "arm follows a park");
+        if self.armed == ALL_SMALL {
+            return 0;
+        }
+        let fresh = !self.armed & ALL_SMALL;
+        self.armed = ALL_SMALL;
+        self.stats.arms += 1;
+        fresh
+    }
+
+    /// A segment refill of class `c` found the overflow empty: `c` stops
+    /// ticking until the next park re-arms it.
+    pub fn disarm(&mut self, c: usize) {
+        debug_assert_eq!(self.bytes, 0, "only an empty overflow disarms");
+        self.armed &= !(1u64 << c);
+        self.stats.disarms += 1;
+    }
+
+    /// The small classes currently armed (bit `c`).
+    #[cfg_attr(not(any(feature = "internals", debug_assertions)), allow(dead_code))]
+    pub fn armed(&self) -> u64 {
+        self.armed
+    }
+
+    /// Teardown / bind: nothing is parked, no class ticks.
+    pub(crate) fn disarm_all(&mut self) {
+        debug_assert_eq!(self.bytes, 0, "only an empty overflow disarms");
+        self.armed = 0;
+    }
+
+    /// `(events, epoch_len, debt_mask, starved, reloads_since_ingress,
+    /// low[c], parked_in_epoch)` — the decay / ingress / latch state, for the
+    /// WB-3 model test.
+    #[cfg(feature = "internals")]
+    pub(crate) fn epoch_state(&self, c: usize) -> (u32, u32, u32, u32, u32, u16, u32) {
+        (
+            self.events,
+            self.epoch_len,
+            self.debt_mask,
+            self.starved,
+            self.reloads_since_ingress,
+            self.low[c],
+            self.parked_in_epoch,
+        )
+    }
+
+    /// Bytes of blocks currently parked in the overflow.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
+    pub fn bytes(&self) -> usize {
+        self.bytes
+    }
+
+    /// Record bytes currently committed (all classes; the reservation's
+    /// first page counts once it exists).
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
+    pub(crate) fn committed_bytes(&self) -> usize {
+        self.committed.iter().map(|&b| b as usize).sum()
+    }
+
+    /// Whether a reservation exists (decay and teardown work only then).
+    pub(crate) fn active(&self) -> bool {
+        !self.base.is_null()
+    }
+
+    /// Ring capacity of class `c` for budget `budget` (records).
+    pub const fn cap_for(budget: usize, c: usize) -> usize {
+        budget / mag_bytes(c)
+    }
+
+    /// Reserve the per-class regions for `budget` on first use. `false` when
+    /// reservation failed now or before (the overflow stays off until trim).
+    fn ensure_reserved(&mut self, budget: usize) -> bool {
+        if self.active() {
+            return true;
+        }
+        if self.reserve_failed {
+            return false;
+        }
+        let page = aligned_vmem::page_size();
+        let mut total = 0usize;
+        let mut c = 0;
+        while c < DEPOT_CLASSES {
+            let cap = Self::cap_for(budget, c);
+            self.cap[c] = cap as u16;
+            self.off[c] = total as u32;
+            total += (cap * REC).next_multiple_of(page);
+            c += 1;
+        }
+        if total == 0 {
+            return false;
+        }
+        #[cfg(feature = "lazy-commit-fault-injection")]
+        let reserved = if reserve_fault_fires() {
+            None
+        } else {
+            crate::alloc_core::os::reserve_depot_overflow(total.next_multiple_of(page))
+        };
+        #[cfg(not(feature = "lazy-commit-fault-injection"))]
+        let reserved = crate::alloc_core::os::reserve_depot_overflow(total.next_multiple_of(page));
+        match reserved {
+            Some(base) => {
+                self.base = base;
+                // The first page is committed by the reservation.
+                self.committed[0] = (page.min(total)) as u32;
+                self.epoch_len = EPOCH_MIN;
+                true
+            }
+            None => {
+                self.reserve_failed = true;
+                false
+            }
+        }
+    }
+
+    /// Commit class `c`'s region through record `idx`; `false` on failure
+    /// (nothing changes).
+    fn ensure_committed(&mut self, c: usize, idx: usize) -> bool {
+        let need = (idx + 1) * REC;
+        let have = self.committed[c] as usize;
+        if need <= have {
+            return true;
+        }
+        let page = aligned_vmem::page_size();
+        let end = need
+            .next_multiple_of(page)
+            .min((self.cap[c] as usize * REC).next_multiple_of(page));
+        let off = self.off[c] as usize;
+        // SAFETY: `self.base` is a live span returned by
+        // `sefer_platform::os::reserve_depot_overflow` (never released; the
+        // reservation lives for the heap's lifetime). `off + have` and
+        // `off + end` are page-aligned offsets inside that span: `off` and
+        // every committed watermark (`have`, `end`) are page multiples
+        // (`next_multiple_of(page)` above; the first page counts once the
+        // reservation exists), `have < end` because `need > have`, and `end`
+        // is capped at class `c`'s region end (`cap[c] * REC` rounded to a
+        // page), so both lie inside the reservation. Only the owner reaches
+        // this control.
+        #[allow(unsafe_code)]
+        if !unsafe { sefer_platform::os::commit_depot_overflow(self.base, off + have, off + end) } {
+            return false;
+        }
+        self.committed[c] = end as u32;
+        true
+    }
+
+    fn record(&self, c: usize, idx: usize) -> *mut Mag {
+        self.base
+            .wrapping_add(self.off[c] as usize + idx * REC)
+            .cast::<Mag>()
+    }
+
+    /// Ring slot `head + i` of class `c` (no division: `i < cap`).
+    fn slot(&self, c: usize, i: usize) -> usize {
+        let idx = self.head[c] as usize + i;
+        let cap = self.cap[c] as usize;
+        if idx >= cap {
+            idx - cap
+        } else {
+            idx
+        }
+    }
+
+    /// Class `c`'s overflow length (records).
+    pub fn len(&self, c: usize) -> usize {
+        self.len[c] as usize
+    }
+
+    /// Class `c`'s ring capacity (records); 0 before the reservation.
+    pub(crate) fn cap(&self, c: usize) -> usize {
+        self.cap[c] as usize
+    }
+
+    /// Park `mag` as class `c`'s newest overflow record; `n` is the class's
+    /// current overflow length. `false` (no change to records) when over
+    /// budget, full or the storage cannot be reserved / committed.
+    pub(crate) fn park(&mut self, c: usize, n: usize, mag: &Mag, budget: usize) -> bool {
+        debug_assert_eq!(n, self.len[c] as usize);
+        if self.bytes + mag_bytes(c) > budget {
+            self.stats.budget_refusals += 1;
+            return false;
+        }
+        if !self.ensure_reserved(budget) {
+            self.stats.os_refusals += 1;
+            return false;
+        }
+        if n >= self.cap[c] as usize {
+            self.stats.budget_refusals += 1;
+            return false;
+        }
+        let idx = self.slot(c, n);
+        if !self.ensure_committed(c, idx) {
+            self.stats.os_refusals += 1;
+            return false;
+        }
+        // SAFETY: `idx < cap[c]`, so the record lies inside class `c`'s region
+        // of the live reservation, committed through `idx` just above; the
+        // region is page-aligned and records are 128 B, so the pointer is
+        // aligned for `Mag`. Only the owner reaches this control.
+        #[allow(unsafe_code)]
+        unsafe {
+            self.record(c, idx).write(*mag);
+        }
+        self.bytes += mag_bytes(c);
+        self.len[c] += 1;
+        self.parked_in_epoch |= 1 << c;
+        self.stats.parks += 1;
+        true
+    }
+
+    /// Move class `c`'s newest overflow record into `out`; `n` is the class's
+    /// current overflow length (`> 0`).
+    pub(crate) fn reload(&mut self, c: usize, n: usize, out: &mut Mag) {
+        debug_assert!(n > 0 && self.active() && n == self.len[c] as usize);
+        let idx = self.slot(c, n - 1);
+        // SAFETY: `n > 0` records are live in class `c`'s ring, so `idx` was
+        // written by `park` (committed, aligned, inside the reservation).
+        #[allow(unsafe_code)]
+        unsafe {
+            *out = self.record(c, idx).read();
+        }
+        self.bytes -= mag_bytes(c);
+        self.len[c] -= 1;
+        self.low[c] = self.low[c].min(self.len[c]);
+        // Debt never exceeds the ring: a reload consumes what decay would.
+        self.set_debt(c, self.debt[c].min(self.len[c]));
+        self.stats.reloads += 1;
+    }
+
+    /// WB-3 fast lane: `Self::park` of class `c`'s newest record followed by
+    /// [`Self::tick`], for the steady case only — the class already has a
+    /// record (no arming), the ring keeps room after this one (no latch), the
+    /// budget holds, the record is reserved and committed, and the tick finds
+    /// no decay work due. Then it performs exactly their writes and returns
+    /// `true`; otherwise it changes nothing and returns `false`, and the
+    /// caller takes the generic path.
+    #[inline(always)]
+    pub fn park_simple(&mut self, c: usize, mag: &Mag, budget: usize) -> bool {
+        let n = self.len[c] as usize;
+        let mb = mag_bytes(c);
+        if n == 0
+            || n + 1 >= self.cap[c] as usize
+            || self.bytes + mb > budget
+            || self.base.is_null()
+            || self.debt_mask != 0
+            || self.events + 1 >= self.epoch_len
+        {
+            return false;
+        }
+        let idx = self.slot(c, n);
+        if (idx + 1) * REC > self.committed[c] as usize {
+            return false;
+        }
+        // SAFETY: as in `park` — `idx < cap[c]` (`n + 1 < cap`), the record is
+        // committed (checked just above) inside the live reservation, and
+        // records are 128 B in page-aligned regions. Only the owner reaches
+        // this control.
+        #[allow(unsafe_code)]
+        unsafe {
+            self.record(c, idx).write(*mag);
+        }
+        self.bytes += mb;
+        self.len[c] += 1;
+        self.parked_in_epoch |= 1 << c;
+        self.stats.parks += 1;
+        // `tick`: `bytes > 0` now and no decay work is due (checked above).
+        self.events += 1;
+        true
+    }
+
+    /// WB-3 fast lane: `Self::reload` of class `c`'s newest record followed
+    /// by [`Self::ingress_due`], [`Self::take_unstarved`] and [`Self::tick`],
+    /// for the steady case only — a record exists, no decay debt, no latched
+    /// class, the ingress check is not due, and the tick finds no decay work.
+    /// Then it performs exactly their writes and returns `Some(more)`
+    /// (`more`: records remain); otherwise it changes nothing and returns
+    /// `None`.
+    #[inline(always)]
+    pub fn reload_simple(&mut self, c: usize, out: &mut Mag) -> Option<bool> {
+        let n = self.len[c] as usize;
+        if n == 0
+            || self.debt_mask != 0
+            || self.starved != 0
+            || self.reloads_since_ingress + 1 >= INGRESS_PERIOD
+        {
+            return None;
+        }
+        let bytes = self.bytes - mag_bytes(c);
+        if bytes != 0 && self.events + 1 >= self.epoch_len {
+            return None;
+        }
+        debug_assert_eq!(self.debt[c], 0, "debt_mask bit c <=> debt[c] != 0");
+        let idx = self.slot(c, n - 1);
+        // SAFETY: as in `reload` — `n > 0` records are live in class `c`'s
+        // ring, so `idx` was written by `park` (committed, aligned, inside the
+        // reservation).
+        #[allow(unsafe_code)]
+        unsafe {
+            *out = self.record(c, idx).read();
+        }
+        self.bytes = bytes;
+        self.len[c] = (n - 1) as u16;
+        self.low[c] = self.low[c].min(self.len[c]);
+        self.stats.reloads += 1;
+        // `ingress_due`: counted, not due (checked above).
+        self.reloads_since_ingress += 1;
+        // `tick`: counts only while bytes remain parked; not due (checked).
+        if bytes != 0 {
+            self.events += 1;
+        }
+        Some(n > 1)
+    }
+
+    /// Move class `c`'s oldest overflow record into `out` (decay); `n` is the
+    /// class's current overflow length (`> 0`).
+    pub(crate) fn pop_oldest(&mut self, c: usize, n: usize, out: &mut Mag) {
+        debug_assert!(n > 0 && self.active() && n == self.len[c] as usize);
+        let idx = self.head[c] as usize;
+        // SAFETY: as in `reload` — the head record is live while `n > 0`.
+        #[allow(unsafe_code)]
+        unsafe {
+            *out = self.record(c, idx).read();
+        }
+        self.head[c] = self.slot(c, 1) as u16;
+        self.bytes -= mag_bytes(c);
+        self.len[c] -= 1;
+        self.low[c] = self.low[c].min(self.len[c]);
+        self.set_debt(c, self.debt[c].saturating_sub(1));
+        self.stats.decay_flushed += 1;
+    }
+
+    fn set_debt(&mut self, c: usize, d: u16) {
+        self.debt[c] = d;
+        if d == 0 {
+            self.debt_mask &= !(1 << c);
+        } else {
+            self.debt_mask |= 1 << c;
+        }
+    }
+
+    /// Count one reload from the overflow; `true` every 8th, when the caller
+    /// runs the bounded remote-ingress check it otherwise skips.
+    pub fn ingress_due(&mut self) -> bool {
+        self.reloads_since_ingress += 1;
+        if self.reloads_since_ingress >= INGRESS_PERIOD {
+            self.reloads_since_ingress = 0;
+            self.stats.ingress_checks += 1;
+            return true;
+        }
+        false
+    }
+
+    /// Count one cold event; `true` when decay work is due (an epoch ended
+    /// or debt is outstanding) and the caller must run `Self::decay_step`.
+    #[inline(always)]
+    pub fn tick(&mut self) -> bool {
+        if self.bytes == 0 {
+            return false;
+        }
+        self.events += 1;
+        self.events >= self.epoch_len || self.debt_mask != 0
+    }
+
+    /// Whether the current decay epoch has ended.
+    pub(crate) fn epoch_due(&self) -> bool {
+        self.events >= self.epoch_len.max(EPOCH_MIN)
+    }
+
+    /// End the epoch: each class that parked nothing in it — neither into
+    /// the overflow nor, per `floor_parked` (bit `c`), into its floor — owes
+    /// half its low-water mark (rounded up); the next epoch starts from the
+    /// current lengths.
+    pub(crate) fn end_epoch(&mut self, floor_parked: u32) {
+        let parked = self.parked_in_epoch | floor_parked;
+        let mut total = 0usize;
+        let mut c = 0;
+        while c < DEPOT_CLASSES {
+            let d = if parked & (1 << c) == 0 {
+                self.low[c].div_ceil(2).min(self.len[c])
+            } else {
+                0
+            };
+            self.set_debt(c, d);
+            self.low[c] = self.len[c];
+            total += self.len[c] as usize;
+            c += 1;
+        }
+        self.parked_in_epoch = 0;
+        self.events = 0;
+        self.epoch_len = (2 * total as u32).max(EPOCH_MIN);
+    }
+
+    /// The next class to decay, if any debt is outstanding.
+    pub(crate) fn debt_class(&self) -> Option<usize> {
+        if self.debt_mask == 0 {
+            None
+        } else {
+            Some(self.debt_mask.trailing_zeros() as usize)
+        }
+    }
+
+    /// Mark class `c` as latched (its `PerClass::limit` was lowered).
+    pub(crate) fn starve(&mut self, c: usize) {
+        self.starved |= 1 << c;
+    }
+
+    /// Latched classes that may park again under `budget` (room for one more
+    /// magazine of theirs, ring not full); their bits are cleared.
+    pub fn take_unstarved(&mut self, budget: usize) -> u32 {
+        if self.starved == 0 || self.reserve_failed {
+            return 0;
+        }
+        let mut ready = 0;
+        let mut m = self.starved;
+        while m != 0 {
+            let c = m.trailing_zeros() as usize;
+            m &= m - 1;
+            let ring_room = !self.active() || self.len[c] < self.cap[c];
+            if self.bytes + mag_bytes(c) <= budget && ring_room {
+                ready |= 1 << c;
+            }
+        }
+        self.starved &= !ready;
+        ready
+    }
+
+    /// After the depot is fully drained: return the committed record pages to
+    /// the OS, then reset rings, watermarks and decay state (the next park
+    /// re-commits). The reservation and its layout stay for reuse.
+    pub(crate) fn release_pages(&mut self) {
+        debug_assert_eq!(self.bytes, 0, "overflow must be drained first");
+        if !self.active() {
+            self.reserve_failed = false;
+            return;
+        }
+        let mut c = 0;
+        while c < DEPOT_CLASSES {
+            let have = self.committed[c] as usize;
+            if have != 0 {
+                let off = self.off[c] as usize;
+                // SAFETY: as in `ensure_committed` — `self.base` is a live
+                // span from `sefer_platform::os::reserve_depot_overflow`
+                // (never released) and `off` / `off + have` are page-aligned
+                // offsets inside it (each region and commit watermark is a
+                // page multiple). The overflow is drained (`bytes == 0`,
+                // debug-asserted above), so no live record exists in the
+                // range, the contents are never read after this, and the
+                // next park re-commits through `ensure_committed` before any
+                // write.
+                #[allow(unsafe_code)]
+                unsafe {
+                    sefer_platform::os::decommit_depot_overflow(self.base, off, off + have)
+                };
+                self.stats.decommits += 1;
+            }
+            c += 1;
+        }
+        self.reset_rings();
+    }
+
+    /// Empty every ring and drop every commit watermark to 0.
+    fn reset_rings(&mut self) {
+        self.committed = [0; DEPOT_CLASSES];
+        self.len = [0; DEPOT_CLASSES];
+        self.debt_mask = 0;
+        self.head = [0; DEPOT_CLASSES];
+        self.low = [0; DEPOT_CLASSES];
+        self.debt = [0; DEPOT_CLASSES];
+        self.parked_in_epoch = 0;
+        self.events = 0;
+        self.epoch_len = EPOCH_MIN;
+        self.reloads_since_ingress = 0;
+    }
+}
