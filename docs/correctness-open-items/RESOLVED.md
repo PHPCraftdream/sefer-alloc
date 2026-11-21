@@ -22,7 +22,7 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
-205. **CLOSED (2026-11-21, P2.5 #187): VER-04 Large/saturation proof CI** — [CI job `136956334980`](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/44940255958/job/136956334980) on `668c0361` ran all five harnesses; [full narrative](ARCHIVE.md#recently-resolved--full-closure-trail).
+- 205. **CLOSED (2026-11-21, P2.5 #187): VER-04 Large/saturation proofs and consolidated Kani CI.** — full closure narrative in `docs/correctness-open-items/ARCHIVE.md` (formerly `docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md`) § "Recently resolved — full closure trail"; [CI job `136956334980`](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/44940255958/job/136956334980) on `668c0361` ran all five harnesses.
 
 ### 284 — README magazine-oracle path pin: CLOSED (2026-11-21)
 
