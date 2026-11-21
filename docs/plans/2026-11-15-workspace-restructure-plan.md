@@ -1,6 +1,6 @@
 # sefer-alloc — workspace restructure plan (tests, thematic crate folders, core split)
 
-Date: 2026-11-15. Status (revision 4, 2026-11-17): P1.3/P1.4/P1.6 are merged into `main` `a966aa8f` (PR #257, merged 2026-11-16). P2.0a–d is open as PR #259 (A1 back-edge ratchet 12 → 8), in CI at the time of this revision. P1.5 is approved to proceed, implementation not started; P2.1–P2.5 are approved to proceed, implementation not started. The repository variable `TEST_SELECTION` is not set, and the measured window shows 0 of 28 runs would have been subsets even with selection enabled (PR #258; section 7). The measurement PRs #258/#260/#261/#262 are merged. P0.2's ordinary-CI measurement remains pending. (Replaced by revision 4: the 2026-11-16 status text said P1.3/P1.4/P1.6 implementation was integrated in the landing stack with CI/perf pending and no merge to main claimed.) Revision 3's earlier STOP dispositions are historical and superseded as current authorization by the owner override below. Source tree measured at `main` `d093edd7`.
+Date: 2026-11-15. Status (2026-11-21, through `origin/main` `bf636478`): P2.0–P2.4 are merged (PRs #259, #274, #279, #280, #283; see section 5). PR #284 adds adjacent source-scanner coverage for `sefer-segment`. P2.5 (#187) ships in a PR carrying `CI: full`; see section 5 for the two acceptance requirements, neither claimed here. P1.5a/b landed and P1.5c landed the enforce criterion, not enforce enablement. P0.2 is NO-GO; P0.3/P0.4 remain closed. The original source measurement was at `main` `d093edd7`.
 Revision 2 (2026-11-15, self-review): added the visibility-widening cost, the test-inventory
 gate, the no-LTO baseline before P1, the explicit P2 decision gate G1, a narrower `CI: full`
 scope and a corrected order (G0 does not gate A0/A1/P0).
@@ -161,7 +161,7 @@ dependency that relocation does not remove; the plan does not assume the split.
 
 ### Process rules (revision 4)
 - Gate policy (ghost-zero-cost and similar) changes in a separate PR BEFORE the PR it judges. In this session the policy was changed three times inside the same PR it judged (extraction mode, `tokens_new`, layers mode); this is not done again. For P2.1–P2.4 the existing extraction mode is sufficient.
-- Status (2026-11-21): the stabilized `ghost-zero-cost` probe and its [report](../perf/GHOST_ZERO_COST_PROBE_STABILITY_20261121.md) are to go in a separate PR before later extraction PRs; gate policy and tolerances are unchanged.
+- Status (2026-11-21): the stabilized `ghost-zero-cost` probe and its [report](../perf/GHOST_ZERO_COST_PROBE_STABILITY_20261121.md) landed separately in PR #282 (`8b1cd0b3`), before P2.4 merged; gate policy and tolerances are unchanged.
 - One P2 step = one PR, together with its derived data and an EV-1 reverify.
 - The local ban on builds and tests holds without exceptions; feedback is accelerated by the cargo-free checks in the always-on job and by watching CI with a stop on the first red job.
 - Side measurements and CI levers run only while the main path is waiting for CI.
@@ -271,6 +271,8 @@ reported to the owner. Default when the numbers do not show a clear benefit: sto
   test-impact map inside the root crate second; miri, loom and kani run per changed crate.
   Status (2026-11-16): owner approved P1.5 to proceed; implementation not started; modeled history shows no selector savings, and actual CI/perf remain pending.
   Status (revision 4, 2026-11-17): P1.5 is split — P1.5a (Node tests/benches/examples do not trigger the full Rust test run), P1.5b (selection by the crates graph), P1.5c (enforce enablement by the section 3 criterion); order in section 6. Modeled history (PR #258): 0 of 28 window runs would have been subsets, so enforce without P1.5a/b saves nothing.
+  Status (2026-11-17): P1.5a and P1.5b merged via PRs #266 (`c708ac96`) and #268 (`a28be5da`).
+  Status (2026-11-18): PR #272 (`29fbbda1`) landed the P1.5c safety criterion; this does not enable enforce mode.
 - **P1.6 Inline audit**: hot-path functions on the new crate boundaries are `#[inline]`;
   the no-LTO IAI row shows delta 0 against the P1.0 baseline.
   Status (2026-11-16): owner approved merge; implementation integrated in landing stack; CI/perf pending; not claimed merged to main.
@@ -284,15 +286,22 @@ reported to the owner. Default when the numbers do not show a clear benefit: sto
   c. move or invert `route_pin_cache` (`segment_route -> heap_core_xthread`);
   d. replace `fallback::try_with_heap` in `heap_core_xthread/routing.rs` with a hook registered by the facade.
   Status (revision 4, 2026-11-17): P2.0a–d is open as PR #259 (A1 back-edge ratchet 12 → 8), in CI at the time of this revision; not merged.
+  Status (2026-11-17, landing): merged into `main` via PR #259 (`1a684c38`); A1 ratchet 12 → 8, not zero.
 - **P2.1 `sefer-segment` / `sefer-route`** (one or two crates per A0).
+  Status (2026-11-18): merged via PR #274 (`b99b57c9`); segment and route were extracted together into `sefer-segment`.
 - **P2.2 `sefer-alloc-core`**: `small`, `large`, the `AllocCore` hub and its diagnostics.
+  Status (2026-11-19): `sefer-alloc-core` extraction merged via PR #279 (`7eb12eee`).
 - **P2.3 `sefer-registry`**: heap core, heap registry, bootstrap, xthread.
+  Status (2026-11-21): `sefer-registry` extraction merged via PR #280 (`fd7c675a`).
 - **P2.4 Facade**: `src/` keeps `global`, feature forwarding and re-exports; Kani proofs move
   to the crates that own the internals they need.
-- **P2.5 Close-out**: per-crate feature powerset, README "where unsafe lives", docs.rs
-  feature rows per crate, CHANGELOG, round manifest, sprint-close `CI: full` run.
+  Status (2026-11-21): merged via PR #283 (`2246bfb1`); Kani proofs moved to `sefer-segment` and `sefer-registry`, with CI wired by owning package.
+- **P2.5 Close-out (#187)**: the close-out ships in a PR carrying `CI: full`.
+  - Implemented: per-crate feature-powerset wiring, the README unsafe inventory, the CHANGELOG and the round manifest. The workspace composite adds all-features rustdoc rows for workspace members and checks their exact docs.rs configurations where already declared. For those configurations, the docs.rs row is skipped only when the manifest declares `all-features = true` without rustdoc arguments.
+  - Deferred: new docs.rs declarations in EV-1-scoped Cargo manifests require EV-1 reverify. Those manifests and the evidence-scoped `src/lib.rs` inventory mirror are unchanged.
+  - Acceptance requires green full CI on the exact landing SHA (`node scripts/verify-sprint-close.mjs <sha>`) plus a separate scheduled or dispatched (`workflow_dispatch`) run of `feature-powerset` on the close-out tree covering `sefer-segment`, `sefer-alloc-core` and `sefer-registry`. The `CI: full` trailer does not schedule `feature-powerset`. Neither result is claimed here.
 
-Status (2026-11-16): owner override approves P2.0–P2.5 to proceed; implementation not started; CI/perf pending.
+Historical decision (2026-11-16): the owner override approved P2.0–P2.5 to proceed.
 
 Expected benefit, stated honestly: P0 and P1 reduce cost for peripheral, policy, container
 and test-only changes. A change in `segment` or `small` will still reach most tests after
