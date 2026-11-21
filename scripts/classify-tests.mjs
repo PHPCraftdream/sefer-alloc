@@ -23,7 +23,7 @@
 //   - git identity commands succeed; tracked files under tests/, Cargo.toml,
 //     src/, and crates/core/sefer-registry/ are clean per Git status (untracked allowed)
 //   - targets + non-targets cover every tests/ file exactly once
-//   - every explicit [[test]] table resolves to an existing file
+//   - every explicit [[test]] table resolves to an eligible repo file
 //   - group members == mergeable set; sum(saved_links) == mergeable - groups
 //   - every pairwise intersection <= min(|A|,|B|)
 //   - hypotheses 'measured' values come from the counts object by construction
@@ -32,16 +32,16 @@
 
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { readFileSync, statSync } from 'node:fs';
+import { dirname, join, posix, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseToml, packageValue } from './classify-tests/toml.mjs';
-import { discoverTargets } from './classify-tests/discover.mjs';
+import { discoverTargets, explicitTestTargets } from './classify-tests/discover.mjs';
+import { listGitFiles } from './classify-tests/git-files.mjs';
 import {
   classifySource, deriveFirstConfigWinMarkers,
-  FIRST_CONFIG_WIN_CANDIDATES, MARKER_PROVENANCE, listSrcRustFiles, markerRegex,
-  rawMatchZone,
+  FIRST_CONFIG_WIN_CANDIDATES, MARKER_PROVENANCE, listSrcRustFiles, rawMatchZone,
 } from './classify-tests/features.mjs';
 import { collectPinSurfaces, scanAllPins } from './classify-tests/pins.mjs';
 import {
@@ -66,8 +66,13 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 // ---------------------------------------------------------------- identity
 function git(argsv, { raw = false } = {}) {
-  const r = spawnSync('git', argsv, { cwd: repoRoot, encoding: 'utf8' });
-  if (r.status !== 0) throw new Error(`git ${argsv.join(' ')} failed: ${r.stderr}`);
+  const r = spawnSync('git', argsv, {
+    cwd: repoRoot, encoding: 'utf8', env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+  });
+  if (r.status !== 0) {
+    const detail = r.error?.message || r.stderr?.trim() || r.signal || `exit ${r.status}`;
+    throw new Error(`git ${argsv.join(' ')} failed: ${detail}`);
+  }
   return raw ? r.stdout : r.stdout.trim();
 }
 
@@ -99,65 +104,54 @@ if (dirty.length > 0 && !process.env.CLASSIFY_TESTS_ALLOW_DIRTY) {
 const trackedInputsClean = dirty.length === 0 || Boolean(process.env.CLASSIFY_TESTS_ALLOW_DIRTY);
 
 // ---------------------------------------------------------------- discovery
-const manifest = parseToml(readFileSync(join(repoRoot, 'Cargo.toml'), 'utf8'));
+const cargoRaw = readFileSync(join(repoRoot, 'Cargo.toml'), 'utf8');
+const manifest = parseToml(cargoRaw);
 const autotests = packageValue(manifest, 'autotests', true);
-const { targets, nonTargets, explicitCount } = discoverTargets(repoRoot, manifest);
-
-// Coverage assertion: every file under tests/ appears exactly once across
-// targets + nonTargets (both hold paths relative to repoRoot, posix-style).
-const listedPaths = new Map();
-for (const t of targets) listedPaths.set(t.path, 'target');
-for (const n of nonTargets) {
-  if (listedPaths.has(n.path)) throw new Error(`entry listed twice: ${n.path}`);
-  listedPaths.set(n.path, n.kind);
-}
-const allFiles = [];
-const walkFiles = (dir, rel) => {
-  for (const ent of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-    const childRel = rel === '' ? ent.name : `${rel}/${ent.name}`;
-    if (ent.isDirectory()) walkFiles(join(dir, ent.name), childRel);
-    else if (ent.isFile()) allFiles.push(childRel);
+const explicit = explicitTestTargets(manifest);
+const testTables = manifest.sections.filter((s) =>
+  s.kind === 'array' && s.path.length === 1 && s.path[0] === 'test');
+for (const [i, t] of explicit.entries()) {
+  const path = posix.normalize(t.path);
+  if (win32.isAbsolute(t.path) || /^[a-z]:/i.test(t.path) || path === '..' || path.startsWith('../')) {
+    throw new Error(`explicit [[test]] path must be inside the repository: ${t.path}`);
   }
-};
-walkFiles(join(repoRoot, 'tests'), '');
-for (const f of allFiles) {
-  const p = `tests/${f}`;
-  if (!listedPaths.has(p)) throw new Error(`tests/ file missing from inventory: ${p}`);
-}
-if (listedPaths.size !== targets.length + nonTargets.length) {
-  throw new Error('inventory paths inconsistent');
-}
-
-// Explicit tables resolve to existing files.
-for (const t of targets) {
-  if (!t.declared_explicit) continue;
-  try { statSync(join(repoRoot, t.path)); } catch {
+  try {
+    if (!statSync(join(repoRoot, path)).isFile()) throw new Error('not a file');
+  } catch {
     throw new Error(`explicit [[test]] table resolves to missing file: ${t.path}`);
   }
+  testTables[i].values.path = t.path = path;
+}
+
+const registrySrc = `${registryCrate}src`;
+const roots = [...new Set([
+  'tests/', 'src/', `${registrySrc}/`, '.github/workflows/', '.github/actions/',
+  'scripts/', 'docs/', 'README.md', 'ARCHITECTURE.md', ...explicit.map((t) => t.path),
+])].sort();
+const files = listGitFiles(repoRoot, roots);
+const eligible = new Set(files);
+for (const { path } of explicit) {
+  if (!eligible.has(path)) {
+    throw new Error(`explicit [[test]] file is not an eligible Git input (ignored or not a regular file): ${path}`);
+  }
+}
+const testFiles = files.filter((path) => path.startsWith('tests/'));
+const { targets, nonTargets, explicitCount } = discoverTargets(testFiles, manifest);
+
+const listedPaths = new Set();
+for (const { path } of [...targets, ...nonTargets]) {
+  if (listedPaths.has(path)) throw new Error(`entry listed twice: ${path}`);
+  listedPaths.add(path);
+}
+for (const path of testFiles) {
+  if (!listedPaths.has(path)) throw new Error(`tests/ file missing from inventory: ${path}`);
 }
 
 // ---------------------------------------------------------------- markers
-const srcDir = join(repoRoot, 'src');
-const srcFiles = listSrcRustFiles(srcDir);
-// Match the fallback marker scan, including fallback.rs beside registry/.
-const registrySrc = `${registryCrate}src`;
-const registrySrcDir = join(repoRoot, registrySrc);
-const registrySrcFiles = existsSync(registrySrcDir) ? listSrcRustFiles(registrySrcDir) : [];
-const grepFirstHit = (dir, marker) => {
-  void dir;
-  const re = markerRegex(marker);
-  for (const f of srcFiles) {
-    const text = readFileSync(join(srcDir, f), 'utf8');
-    const m = text.match(re);
-    if (m) {
-      const before = text.slice(0, m.index);
-      const line = before.split(/\r?\n/).length;
-      return { file: `src/${f}`, line };
-    }
-  }
-  return null;
-};
-const markerRecords = deriveFirstConfigWinMarkers(srcDir, FIRST_CONFIG_WIN_CANDIDATES, grepFirstHit);
+const srcFiles = listSrcRustFiles(files, 'src');
+const registrySrcFiles = listSrcRustFiles(files, registrySrc);
+const markerRecords = deriveFirstConfigWinMarkers(repoRoot, FIRST_CONFIG_WIN_CANDIDATES,
+  srcFiles, registrySrcFiles);
 const markerList = markerRecords.map((m) => ({
   marker: m.marker,
   src_hit: `${m.src_hit.file}:${m.src_hit.line}`,
@@ -165,19 +159,21 @@ const markerList = markerRecords.map((m) => ({
 }));
 
 // ---------------------------------------------------------------- classify
-const pins = scanAllPins(collectPinSurfaces(repoRoot), targets.map((t) => t.name));
+const pins = scanAllPins(collectPinSurfaces(repoRoot, files), targets.map((t) => t.name));
 
 // Hash the sorted tracked inputs that feed this derived inventory. Exclude the
 // generated report to avoid self-reference; commit/tree IDs remain available
 // through --identity and --json for local provenance.
-const trackedPaths = new Set(git(['ls-files', '-z']).split(/\x00/).filter(Boolean));
+const trackedPaths = new Set(git(['--literal-pathspecs', 'ls-files', '-z', '--',
+  'Cargo.toml', ...roots]).split('\0').filter(Boolean));
 const trackedInputPaths = [...new Set([
   'Cargo.toml',
-  ...allFiles.map((f) => `tests/${f}`),
-  ...srcFiles.map((f) => `src/${f}`),
-  ...registrySrcFiles.map((f) => `${registrySrc}/${f}`),
+  ...testFiles,
+  ...explicit.map((t) => t.path),
+  ...srcFiles,
+  ...registrySrcFiles,
   ...pins.surfaceFiles.map((f) => f.file),
-  ...[...trackedPaths].filter((p) => p.startsWith('scripts/classify-tests/') && p.endsWith('.mjs')),
+  ...files.filter((p) => p.startsWith('scripts/classify-tests/') && p.endsWith('.mjs')),
 ])].filter((p) => trackedPaths.has(p)).sort();
 const trackedInputsHasher = createHash('sha256');
 for (const path of trackedInputPaths) {
@@ -280,7 +276,6 @@ const reconciliation = Object.entries(NAIVE_BASELINES).map(([flag, { re, pattern
 });
 
 // Naive counts keyed like the hypotheses metrics (plan §1 = grep approximations).
-const cargoRaw = readFileSync(join(repoRoot, 'Cargo.toml'), 'utf8');
 const naiveCounts = {
   'tests/ .rs files': targets.length,
   'file-level cfg': reconciliation.find((r) => r.flag === 'file_level_cfg').naive,

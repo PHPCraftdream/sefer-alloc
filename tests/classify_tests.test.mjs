@@ -14,7 +14,7 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -125,13 +125,12 @@ test("packageValue reads [package] autotests (present and absent)", () => {
 // ------------------------------------------------------------ 2. discover.mjs
 
 test('discover: depth-1 tests/<dir>/main.rs is a target; deeper main.rs is not', () => {
-  const dir = makeTree({
-    'Cargo.toml': '[package]\nname = "synth"\n',
-    'tests/mydir/main.rs': 'fn main() {}\n',
-    'tests/compile_fail/case1/src/main.rs': 'fn main() {}\n',
-    'tests/compile_fail/case1/src/lib.rs': 'pub fn f() {}\n',
-  });
-  const { targets, nonTargets } = discoverTargets(dir, manifestOf());
+  const files = [
+    'tests/mydir/main.rs',
+    'tests/compile_fail/case1/src/main.rs',
+    'tests/compile_fail/case1/src/lib.rs',
+  ];
+  const { targets, nonTargets } = discoverTargets(files, manifestOf());
   const names = targets.map((t) => t.name);
   assert.deepEqual(names, ['mydir']);
   assert.equal(targets[0].path, 'tests/mydir/main.rs');
@@ -141,27 +140,11 @@ test('discover: depth-1 tests/<dir>/main.rs is a target; deeper main.rs is not',
   assert.equal(kinds['tests/compile_fail/case1'], 'directory-fixture');
   assert.equal(kinds['tests/compile_fail/case1/src/main.rs'], 'support-module');
   assert.equal(kinds['tests/compile_fail/case1/src/lib.rs'], 'support-module');
-  rmSync(dir, { recursive: true, force: true });
 });
 
 test('discover: flat tests/*.rs auto-discovery and explicit path claim (no dup)', () => {
-  const dir = makeTree({
-    'Cargo.toml': [
-      '[package]',
-      'name = "synth"',
-      '',
-      '[[test]]',
-      'name = "flat_a"',
-      'path = "tests/flat_a.rs"',
-      '',
-      '[[test]]',
-      'name = "implied"', // no path -> tests/implied.rs
-    ].join('\n'),
-    'tests/flat_a.rs': 'fn main() {}\n',
-    'tests/flat_b.rs': 'fn main() {}\n',
-    'tests/implied.rs': 'fn main() {}\n',
-  });
-  const { targets, explicitCount } = discoverTargets(dir, manifestOf(
+  const files = ['tests/flat_a.rs', 'tests/flat_b.rs', 'tests/implied.rs'];
+  const { targets, explicitCount } = discoverTargets(files, manifestOf(
     '[[test]]\nname = "flat_a"\npath = "tests/flat_a.rs"\n\n[[test]]\nname = "implied"\n'));
   assert.equal(explicitCount, 2);
   assert.deepEqual(targets.map((t) => t.name).sort(), ['flat_a', 'flat_b', 'implied']);
@@ -173,33 +156,21 @@ test('discover: flat tests/*.rs auto-discovery and explicit path claim (no dup)'
   assert.equal(implied.path, 'tests/implied.rs');
   // every file exactly once
   const paths = targets.map((t) => t.path);
-  assert.equal(new Set(paths).size, paths.length, 'no duplicate target paths');
-  rmSync(dir, { recursive: true, force: true });
+  assert.deepEqual(paths, files, 'every file appears exactly once');
 });
 
 test('discover: duplicate target name throws', () => {
-  const dir = makeTree({
-    'Cargo.toml': ['[package]', 'name = "synth"'].join('\n'),
-    'tests/dup/main.rs': 'fn main() {}\n', // depth-1 auto target collides with [[test]] name
-  });
-  assert.throws(() => discoverTargets(dir, manifestOf('[[test]]\nname = "dup"\n')),
+  const files = ['tests/dup/main.rs', 'tests/dup.rs'];
+  assert.throws(() => discoverTargets(files, manifestOf('[[test]]\nname = "dup"\n')),
     /duplicate target name/);
-  rmSync(dir, { recursive: true, force: true });
 });
 
 test('discover: autotests=false keeps only explicit targets, reclassifies files', () => {
-  const dir = makeTree({
-    'Cargo.toml': ['[package]', 'name = "synth"', 'autotests = false', '',
-      '[[test]]', 'name = "only"'].join('\n'),
-    'tests/only.rs': 'fn main() {}\n',
-    'tests/auto.rs': 'fn main() {}\n',
-  });
-  const { targets, nonTargets } = discoverTargets(dir,
+  const { targets, nonTargets } = discoverTargets(['tests/only.rs', 'tests/auto.rs'],
     manifestOf('[package]\nautotests = false\n\n[[test]]\nname = "only"\n'));
   assert.deepEqual(targets.map((t) => t.name), ['only']);
   const auto = nonTargets.find((n) => n.path === 'tests/auto.rs');
   assert.ok(auto, 'auto-discovered file reclassified as non-target');
-  rmSync(dir, { recursive: true, force: true });
 });
 
 test('discover: test=false / harness=false / required-features flow into fields', () => {
@@ -225,17 +196,11 @@ test('discover: test=false / harness=false / required-features flow into fields'
 });
 
 test('discover: non-target kinds and exact single coverage of every file', () => {
-  const dir = makeTree({
-    'Cargo.toml': '[package]\nname = "synth"\n',
-    'tests/real.rs': 'fn main() {}\n',
-    'tests/sub/main.rs': 'fn main() {}\n',
-    'tests/run.mjs': 'console.log(1);\n',
-    'tests/reg.proptest-regressions': 'box 1\n',
-    'tests/data.txt': 'data\n',
-    'tests/empty_dir/.keep': '\n',
-    'tests/fixtures/helper.rs': 'pub fn h() {}\n',
-  });
-  const { targets, nonTargets } = discoverTargets(dir, manifestOf());
+  const files = [
+    'tests/real.rs', 'tests/sub/main.rs', 'tests/run.mjs', 'tests/reg.proptest-regressions',
+    'tests/data.txt', 'tests/empty_dir/.keep', 'tests/fixtures/helper.rs',
+  ];
+  const { targets, nonTargets } = discoverTargets(files, manifestOf());
   const kindOf = {};
   for (const n of nonTargets) kindOf[n.path] = n.kind;
   assert.equal(kindOf['tests/fixtures'], 'directory-fixture');
@@ -247,20 +212,11 @@ test('discover: non-target kinds and exact single coverage of every file', () =>
   assert.equal(kindOf['tests/empty_dir'], 'directory-fixture');
   // sub/main.rs at depth 1 IS a target named sub
   assert.ok(targets.some((t) => t.name === 'sub' && t.path === 'tests/sub/main.rs'));
-  // coverage: every file on disk appears exactly once across targets+nonTargets
-  const all = [];
-  const walk = (d, rel) => {
-    for (const e of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      const child = rel === '' ? e.name : `${rel}/${e.name}`;
-      if (e.isDirectory()) walk(join(d, e.name), child);
-      else all.push(`tests/${child}`);
-    }
-  };
-  walk(join(dir, 'tests'), '');
-  const listed = new Set([...targets.map((t) => t.path), ...nonTargets.map((n) => n.path)]);
-  assert.equal(listed.size, targets.length + nonTargets.length, 'no double-count');
-  for (const f of all) assert.ok(listed.has(f), `missing from inventory: ${f}`);
-  rmSync(dir, { recursive: true, force: true });
+  const paths = [...targets, ...nonTargets].map((entry) => entry.path);
+  assert.equal(new Set(paths).size, paths.length, 'no double-count');
+  const listed = [...targets.map((t) => t.path),
+    ...nonTargets.filter((n) => n.kind !== 'directory-fixture').map((n) => n.path)];
+  assert.deepEqual(listed.sort(), [...files].sort(), 'every file appears exactly once');
 });
 
 
@@ -407,13 +363,12 @@ test('classifySource: cfgFacts extracts features and known cfg keys', () => {
 });
 
 test('deriveFirstConfigWinMarkers keeps only candidates present in src-like input', () => {
-  const srcDir = makeTree({ 'src/a.rs': 'pub fn with_config() {}\n' });
-  const files = listSrcRustFiles(join(srcDir, 'src'));
-  assert.deepEqual(files, ['a.rs']);
-  const hit = (dir, marker) => (marker === 'with_config' ? { file: 'src/a.rs', line: 1 } : null);
-  const markers = deriveFirstConfigWinMarkers(join(srcDir, 'src'),
-    ['with_config', 'config_conflicts'], hit);
-  assert.deepEqual(markers.map((m) => m.marker), ['with_config']);
+  const fixture = { 'src/a.rs': 'pub fn with_config() {}\n' };
+  const srcDir = makeTree(fixture);
+  const files = listSrcRustFiles(Object.keys(fixture), 'src');
+  assert.deepEqual(files, ['src/a.rs']);
+  const markers = deriveFirstConfigWinMarkers(srcDir, ['with_config', 'config_conflicts'], files, []);
+  assert.deepEqual(markers, [{ marker: 'with_config', src_hit: { file: 'src/a.rs', line: 1 } }]);
   // markerRegex escapes and word-bounds
   assert.ok(markerRegex('with_config').test('x.with_config(y)'));
   assert.ok(!markerRegex('with_config').test('x.without_config(y)'));
@@ -513,7 +468,7 @@ test('scanJ13HashPins: table shape pins, const binding resolves, prose does not'
 });
 
 test('collectPinSurfaces: kinds and sorted surface inventory on a synthetic tree', () => {
-  const dir = makeTree({
+  const fixture = {
     '.github/workflows/ci.yml': 'on: push\n',
     '.github/actions/prep/action.yml': 'name: prep\n',
     'scripts/tool.mjs': 'export {};\n',
@@ -521,8 +476,9 @@ test('collectPinSurfaces: kinds and sorted surface inventory on a synthetic tree
     'docs/sub/g.md': 'doc\n',
     'docs/verification/rules.json': '{}\n',
     'docs/perf/raw.log': 'noise\n',
-  });
-  const surfaces = collectPinSurfaces(dir);
+  };
+  const dir = makeTree(fixture);
+  const surfaces = collectPinSurfaces(dir, Object.keys(fixture));
   const kinds = surfaces.map((s) => s.kind);
   assert.ok(kinds.includes('ci_workflow') && kinds.includes('ci_action'));
   assert.ok(kinds.includes('script') && kinds.includes('doc') && kinds.includes('doc_json'));
@@ -931,7 +887,7 @@ test('CLI --check: committed Markdown and CSV exactly match fresh generation', (
 // --------------------------------------------------------------- 8. determinism
 
 test('discovery+classification pipeline is deterministic on one synthetic tree', () => {
-  const dir = makeTree({
+  const fixture = {
     'Cargo.toml': ['[package]', 'name = "synth"', '',
       '[[test]]', 'name = "gate"', 'required-features = ["alloc-core"]'].join('\n'),
     'tests/gate.rs': '#![cfg(feature = "alloc-core")]\nfn main() {}\n',
@@ -939,10 +895,11 @@ test('discovery+classification pipeline is deterministic on one synthetic tree',
     'tests/alloc_real.rs': '#[global_allocator]\nstatic A: A = A;\n',
     'tests/sub/main.rs': 'fn main() {}\n',
     'tests/util.mjs': 'export {};\n',
-  });
+  };
+  const dir = makeTree(fixture);
+  const files = Object.keys(fixture).filter((path) => path.startsWith('tests/'));
   const run = () => {
-    const man = manifestOf('[package]\nname = "synth"\n\n[[test]]\nname = "gate"\nrequired-features = ["alloc-core"]\n');
-    const { targets, nonTargets } = discoverTargets(dir, man);
+    const { targets, nonTargets } = discoverTargets(files, manifestOf(fixture['Cargo.toml']));
     const rows = targets.map((t) => ({
       target: t,
       facts: classifySource(readFileSync(join(dir, t.path), 'utf8'), []),
@@ -972,7 +929,11 @@ test('groups and pins sort order is stable', () => {
   const p1 = scanPins(surfaces, ['z_a', 'a_b', 'a_a', 'm_c']);
   const p2 = scanPins(surfaces, ['z_a', 'a_b', 'a_a', 'm_c']);
   assert.deepEqual(JSON.stringify([...p1]), JSON.stringify([...p2]));
-  const s1 = collectPinSurfaces(makeTree({ 'README.md': 'x' }));
-  const s2 = collectPinSurfaces(makeTree({ 'README.md': 'x' }));
+  const fixture = { 'README.md': 'x' };
+  const dir = makeTree(fixture);
+  const files = Object.keys(fixture);
+  const s1 = collectPinSurfaces(dir, files);
+  const s2 = collectPinSurfaces(dir, files);
   assert.deepEqual(s1.map((x) => `${x.file}:${x.kind}`), s2.map((x) => `${x.file}:${x.kind}`));
+  rmSync(dir, { recursive: true, force: true });
 });
