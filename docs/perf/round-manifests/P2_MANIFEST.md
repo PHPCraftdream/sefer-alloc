@@ -206,6 +206,20 @@ P2 numbering is from the [workspace plan](../../plans/2026-11-15-workspace-restr
 
 ## Evidence and verification boundary
 
-Before editing, checked all 54 rows of `docs/evidence/source_scope.csv` for literal file/directory-prefix intersection with both documentation paths: none. This is a path-scope check, not a new evidence run or receipt. No Rust, ordering sites, ghost tokens/rules, proof harnesses or gate configuration are edited here. Under `CLAUDE.md` and the ghost plan, ordinary production ranges require exact normalized `.text` and Ir identity; only qualifying extraction or layer ranges may use the symmetric 0.1% Ir bound and head-only production ghost-token check. Probe qualification is not a substitute for the mandatory gate; no waiver or local gate execution is claimed.
+The strict workspace rustdoc row flagged a broken self intra-doc link in the first line of the module doc of
+`crates/core/sefer-alloc-core/src/alloc_core/platform/sidecar.rs`; it is now plain code (`` `sidecar` ``). This one-line
+doc-comment change is the only Rust edit in the PR: it does not change allocator logic, ordering sites, ghost
+tokens/rules or proof harnesses. Under `CLAUDE.md` and the ghost plan, ordinary
+production ranges require exact normalized `.text` and Ir identity; only qualifying extraction or layer ranges may use
+the symmetric 0.1% Ir bound and head-only production ghost-token check. Probe qualification is not a substitute for the
+mandatory gate; no waiver or local gate execution is claimed.
+
+One EV-1 reverify round is requested in this PR for eight rows: R4a-03, R4b-01, R6a-A10, R6a-E1, R6a-E2, R6a-E3,
+R6a-EX2 and R6a-EX4 (six rows cover the crate directory, R6a-EX2 covers the source directory and R6a-EX4 covers
+`alloc_core/platform` — path scopes
+distinct from the documentation paths touched here). Receipts will be reported under `ci(evidence)`; no r20 status or
+outcome claims. This EV-1 round does NOT include the remaining #288 items — (a) the root evidence mirror, (b) the
+seven manifest evidence blocks, and (c) the loom #286 reverify — which are left for #211; all original
+historical evidence, table/range/raw statistics in this manifest are preserved unchanged.
 
 Local checks: `node scripts/ci-plan.mjs --selftest` (110 checks, PASS), `node scripts/verify-structure-limits.mjs` (21 self-test cases; 4 grandfathered directories, 28 files, none new or grown), and `node --test tests/ghost_extraction_policy.test.mjs tests/ghost_probe_stability_report.test.mjs tests/classify_ignored_paths.test.mjs tests/crate_graph.test.mjs` (35 passed, 0 failed). No results from Rust runtime tests, live Kani/Miri/Loom, performance jobs, or full CI are claimed here.

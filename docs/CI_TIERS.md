@@ -202,7 +202,15 @@ reads its exact docs.rs features and rustdoc args from metadata and retains its
 separate internal all-features row. These rows catch warnings specific to the
 published feature set that an all-features build need not expose. Members without
 `[package.metadata.docs.rs]` get only the all-features row from the workspace action;
-adding declarations to EV-1-scoped manifests is deferred pending EV-1 reverify.
+adding declarations to EV-1-scoped manifests is deferred pending EV-1 reverify
+(item 288 of `docs/CORRECTNESS_OPEN_ITEMS.md`). First finding of the new rows
+(PR #285): the workspace all-features rustdoc row flagged a broken
+self intra-doc link, in
+`crates/core/sefer-alloc-core/src/alloc_core/platform/sidecar.rs`, repaired by
+a single doc-comment line. That evidence-scoped source edit makes the close-out
+PR request EV-1 re-verification for the eight affected rows, with the receipts
+to be recorded in its `ci(evidence)` commit; the re-verification result is not
+claimed here.
 
 ## Test-impact map (CI-T1 stage 2)
 

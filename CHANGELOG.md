@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [CI] The P2.5 close-out (#187) ships in a PR carrying `CI: full`. Acceptance requires green full CI on the exact
   landing SHA (`node scripts/verify-sprint-close.mjs <sha>`) and a separate scheduled or dispatched run of
   `feature-powerset`. Neither result is claimed here.
+- [docs] Fixed a broken self intra-doc link in the first line of the module doc of
+  `crates/core/sefer-alloc-core/src/alloc_core/platform/sidecar.rs` (``[`sidecar`]`` → plain code `` `sidecar` ``),
+  flagged by the new strict workspace rustdoc row. No allocator logic or method changes. The same PR requests one
+  EV-1 reverify (R4a-03, R4b-01, R6a-A10, R6a-E1, R6a-E2, R6a-E3, R6a-EX2, R6a-EX4) whose receipts will appear under
+  `ci(evidence)`; remaining #288 items (root evidence mirror, seven manifest evidence blocks, loom #286) are left
+  for #211.
 
 ### Final comparative measurements under hard CPU limits (2026-11-15)
 

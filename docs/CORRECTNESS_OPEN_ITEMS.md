@@ -667,7 +667,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 287 | `TRACKED_ci_gate_coverage.md` |
 | 288 | `TRACKED_ci_gate_coverage.md` |
 
-**P0.2 verdict round (2026-11-17).** The P0.2 test-merge pilot verdict is NO-GO (`docs/perf/P0_2_TEST_MERGE_PILOT.md` § Verdict (2026-11-17); perf item 157). The criterion-(c) README stale-path pin was filed as item 284. Current reconciliation (2026-11-21): item 284 is CLOSED in `RESOLVED.md`; the P2.3 path correction does not change the pilot verdict.
+**P0.2 verdict round (2026-11-17).** The P0.2 test-merge pilot verdict is NO-GO (`docs/perf/P0_2_TEST_MERGE_PILOT.md` § Verdict (2026-11-17); perf item 157). The criterion-(c) README stale-path pin was filed as item 284. Current reconciliation (2026-11-21): item 284 is CLOSED in `RESOLVED.md`; the P2.3 path correction does not change the pilot verdict. Item 288 reconciliation (2026-11-21): this PR's sidecar EV-1 round covers only the eight affected scope rows of the doc-only `sidecar.rs` delta; deferred follow-ups (a)–(c), including item 286, remain for #211.
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` -- is UNCHANGED and remains
