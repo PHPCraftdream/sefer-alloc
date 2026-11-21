@@ -161,6 +161,7 @@ dependency that relocation does not remove; the plan does not assume the split.
 
 ### Process rules (revision 4)
 - Gate policy (ghost-zero-cost and similar) changes in a separate PR BEFORE the PR it judges. In this session the policy was changed three times inside the same PR it judged (extraction mode, `tokens_new`, layers mode); this is not done again. For P2.1–P2.4 the existing extraction mode is sufficient.
+- Status (2026-11-21): the stabilized `ghost-zero-cost` probe and its [report](../perf/GHOST_ZERO_COST_PROBE_STABILITY_20261121.md) are to go in a separate PR before later extraction PRs; gate policy and tolerances are unchanged.
 - One P2 step = one PR, together with its derived data and an EV-1 reverify.
 - The local ban on builds and tests holds without exceptions; feedback is accelerated by the cargo-free checks in the always-on job and by watching CI with a stop on the first red job.
 - Side measurements and CI levers run only while the main path is waiting for CI.
