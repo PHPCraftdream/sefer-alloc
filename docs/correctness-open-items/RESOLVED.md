@@ -22,6 +22,12 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+205. **CLOSED (2026-11-21, P2.5 #187): VER-04 Large/saturation proof CI** — [CI job `136956334980`](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/44940255958/job/136956334980) on `668c0361` ran all five harnesses; [full narrative](ARCHIVE.md#recently-resolved--full-closure-trail).
+
+### 284 — README magazine-oracle path pin: CLOSED (2026-11-21)
+
+Both README references already point to the existing `tests/regression_merged/regression_magazine_oracles.rs` after P2.3 (`429d764b`). See the [closure evidence](ARCHIVE.md#284--readme-magazine-oracle-path-pin-closed-2026-11-21). Perf item 157 remains tracked as NO-GO.
+
 ### 280 — CLOSED (2026-11-17)
 
 280. **[T] Flaky `thread_exit_releases_cached_pins_and_balances` (`tests/b4_r1_pin_cache.rs:599`): the worker's foreign free could land on a fallback-owned base and never insert a cached pin.** (Filed and closed 2026-11-17, check-matrix row `test-r8-fastbin-no-decommit` — features `fastbin internals bench-internals misuse-checks`, i.e. NO `alloc-decommit` and NO `alloc-segment-directory` — instant failure: refs 3 at the worker's report, expected `base_refs + 2` = 4.)

@@ -263,7 +263,7 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   scoping/`needs_drop`/scanner-name-prefix follow-ups (item 9) — not four
   unrelated findings that happen to mention `dbg_`.
 - **`docs/correctness-open-items/TRACKED_verification_coverage.md`**
-  (12 numbered records: 8 open + 4 retained closed) — miri / loom / kani
+  (17 numbered records, including retained closures) — miri / loom / kani
   proof coverage. Criterion: whether an `unsafe` seam or algorithmic invariant
   has (or lacks) interpreter/model-checker PROOF coverage — distinct from
   ordinary CI gate wiring (a test exists but does not run under some job) and
@@ -286,8 +286,8 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   are single confirmed platform-divergence bugs (Windows decommit crash;
   numa-shim macOS+miri fix unconfirmed on real macOS) of the identical
   shape.
-- **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (32
-  cards; items 107, 175 and 275 are retained CLOSED pointers in `RESOLVED.md`) — local/CI gate wiring & sentinel/guard-script coverage.
+- **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (39
+  numbered records, including the retained CLOSED pointer for item 275; items 107, 175 and 284 are in `RESOLVED.md`) — local/CI gate wiring & sentinel/guard-script coverage.
   Criterion: whether an existing test, oracle, or guard script actually
   RUNS under some gate (`npm run check` and/or a CI job) — wiring, dead
   scripts, missing feature/profile rows, sentinel-guard scope — as opposed
@@ -396,7 +396,9 @@ and items177–184 are R17 closures in `RESOLVED.md`. New items185–199
 are thematic `[T]` entries in the destinations below. Other `[A]` citations
 resolve directly in `ACTIVE.md`. The total is deliberately not typed here.
 Compare the two `[T]` numbered-record counts; the second excludes
-`RESOLVED.md` and counts only `TRACKED_*.md` destinations:
+`RESOLVED.md` and counts only `TRACKED_*.md` destinations. Retained
+numbered closure pointers 275, 278 and 279 count in the first scan, but
+map to `RESOLVED.md` in the lookup and so do not count in the second:
 
 ```text
 grep -hE '^[0-9]+[a-z]?\. \*\*' docs/correctness-open-items/TRACKED_*.md | wc -l
@@ -584,7 +586,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 202 | `TRACKED_correctness_residuals.md` |
 | 203 | `TRACKED_platform_contracts.md` |
 | 204 | `TRACKED_ci_gate_coverage.md` |
-| 205 | `TRACKED_verification_coverage.md` |
+| 205 | `RESOLVED.md` |
 | 206 | `RESOLVED.md` |
 | 207 | `RESOLVED.md` |
 | 208 | `RESOLVED.md` |
@@ -659,9 +661,13 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 281 | `TRACKED_ci_gate_coverage.md` |
 | 282 | `TRACKED_ci_gate_coverage.md` |
 | 283 | `TRACKED_ci_gate_coverage.md` |
-| 284 | `TRACKED_ci_gate_coverage.md` |
+| 284 | `RESOLVED.md` |
+| 285 | `TRACKED_ci_gate_coverage.md` |
+| 286 | `TRACKED_ci_gate_coverage.md` |
+| 287 | `TRACKED_ci_gate_coverage.md` |
+| 288 | `TRACKED_ci_gate_coverage.md` |
 
-**P0.2 verdict round (2026-11-17).** The P0.2 test-merge pilot verdict is NO-GO (`docs/perf/P0_2_TEST_MERGE_PILOT.md` § Verdict (2026-11-17); perf item 157). The criterion-(c) README stale-path pin is filed here as item 284 (`TRACKED_ci_gate_coverage.md`), mirroring the 281–283 placement. Nothing was closed this session; unrelated items remain unchanged.
+**P0.2 verdict round (2026-11-17).** The P0.2 test-merge pilot verdict is NO-GO (`docs/perf/P0_2_TEST_MERGE_PILOT.md` § Verdict (2026-11-17); perf item 157). The criterion-(c) README stale-path pin was filed as item 284. Current reconciliation (2026-11-21): item 284 is CLOSED in `RESOLVED.md`; the P2.3 path correction does not change the pilot verdict.
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` -- is UNCHANGED and remains

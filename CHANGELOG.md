@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Allocator workspace split and verification tooling (2026-11-21)
+
+- [build] Split segment metadata and routing into `sefer-segment`, the Small and Large paths and `AllocCore` into
+  `sefer-alloc-core`, and heap ownership, registry, bootstrap and cross-thread routing into `sefer-registry`.
+  These crates share `sefer-policy`, which was already extracted in P1.3, not in Phase 2.
+  The root `sefer-alloc` crate remains the facade: it owns global allocator integration and forwards features and
+  re-exports to the implementation crates. The root `production` bundle still lists the same six features; those
+  features now select and configure the extracted crates. This is not a blanket API-equivalence or speedup claim.
+- [CI] Run the moved Kani harnesses in `sefer-segment` and `sefer-registry`, alongside the existing `sefer-concurrent`
+  proofs. CI job and test selection use declared workspace dependencies and cross-crate source includes; unknown
+  dependencies fall back conservatively. The enforcement criterion is tooling, not an announcement that selection is enforced.
+- [measurement] Stabilized the `ghost-zero-cost` probe by isolating growth, churn and the Large round trip in non-inlined
+  functions and passing inputs through `black_box`. The workload and gate tolerance are unchanged; the historical
+  Callgrind comparisons qualify the probe, not allocator performance.
+- [process fix] The test classifier now inventories tracked and unignored untracked paths from
+  `git ls-files --cached --others --exclude-standard`, so ignored build output no longer pollutes the inventory.
+- [docs] The [Phase 2 manifest](docs/perf/round-manifests/P2_MANIFEST.md) records the workspace split, feature forwarding
+  and verification limits. The landed Phase 2 baseline extends through `origin/main` `bf636478`, including adjacent
+  `sefer-segment` scanner coverage (#284).
+- [CI] The P2.5 close-out (#187) ships in a PR carrying `CI: full`. Acceptance requires green full CI on the exact
+  landing SHA (`node scripts/verify-sprint-close.mjs <sha>`) and a separate scheduled or dispatched run of
+  `feature-powerset`. Neither result is claimed here.
+
 ### Final comparative measurements under hard CPU limits (2026-11-15)
 
 - [measurement] Both comparisons re-run under the owner-requested hard limits `wnice -p high -c 10` (hard 10% CPU cap with HIGH priority,
