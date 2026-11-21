@@ -1,6 +1,6 @@
 # CI tiers: which jobs run for which change
 
-`.github/workflows/ci.yml` declares 60 jobs. Running all of them for every push to a pull request made
+Running every job in `.github/workflows/ci.yml` for every push to a pull request made
 fix series queue for an hour or more (measured on 2026-10-13: PR runs averaged ~85 minutes, up to 175
 minutes with queueing) and re-ran Miri/Loom/macOS/Windows for pull requests that only touched documents.
 Runs are therefore **tiered**: a job runs when the files of the change need it, and the complete set runs
@@ -10,15 +10,15 @@ on a schedule and on demand.
 
 `ci.yml` is the orchestration graph: triggers, concurrency, permissions, job names/IDs,
 conditions, dependencies, runners, matrices and job environment stay here. Cohesive
-execution sequences live in 51 repository-local composite actions under
+execution sequences live in repository-local composite actions under
 `.github/actions/ci-<job>/action.yml`. Checkout stays before each local action call.
-The extraction reduced the working workflow from 5,437 to 954 lines without changing
-its 60 job definitions. This is a maintainability change, not a faster allocator or
-an authorization to run additional campaigns.
+The original extraction moved steps into 51 local composite actions and reduced the
+workflow from 5,437 to 954 lines without changing its 60 job definitions. It was a
+maintainability change, not a faster allocator or authorization to run additional campaigns.
 
-Seven jobs intentionally remain fully inline: `changes`, `select-tests`, `clippy`, `test-core`,
-`licenses`, `multi-arch`, and `docs`; they own cross-job/output, matrix, license-cache or direct Rust
-source-inspection contracts. `aligned-vmem-hugetlb-real` and `globalalloc-model-miri` keep their checkout
+The workflow keeps cross-job outputs and matrices inline. `licenses` and
+`docs-consistency` delegate their checks to local composite actions after checkout.
+`aligned-vmem-hugetlb-real` and `globalalloc-model-miri` keep their checkout
 and test runs inline while their setup moved to composite actions; similar commands are not automatically interchangeable.
 
 `node scripts/verify-ci-decomposition.mjs` expands only actions actually called by
@@ -53,9 +53,10 @@ and would not be a pure move.
 Action-source edits select the groups of every owning job; shared-reader edits select
 the union of its consumers. This does not set `full` or override weekly/dispatch-only
 conditions or the existing main-push heavy-group suppression. J13b's own changed-path
-guard includes its local action. License coverage follows reachable third-party uses;
-the `licenses` job remains inline, so its fingerprint still includes its actual check
-text and inventory script rather than a wrapper that could hide changed checks.
+guard includes its local action. License coverage follows reachable third-party uses.
+The `licenses` job delegates to `.github/actions/ci-licenses/action.yml`; the cache
+fingerprint currently hashes the workflow job block, not the expanded action body
+(see [item 287](correctness-open-items/TRACKED_ci_gate_coverage.md#287-t-licensing-cache-fingerprint-omits-the-ci-composite-action-body-p25-187-2026-11-21)).
 
 Exact-source acceptance: `d5c61f44d6d1fa0e72884cea5ef91397c03c69bb`, CI42762365242
 SUCCESS, 59 successful jobs and four intended weekly/dispatch skips. Actual positive
@@ -74,7 +75,7 @@ models or workloads were executed.
   Job-level conditions (not workflow-level `paths:`) are deliberate: a skipped job is reported as
   "skipped", which branch protection treats as passing; a workflow skipped by `paths:` would leave required
   checks pending forever.
-- `docs-consistency` is always on and cheap: the doc/inventory tests (`no_stale_doc_references`,
+- `docs-consistency` is always on. Its local composite runs the doc/inventory tests (`no_stale_doc_references`,
   `r1_03_pool_docs_contract`, `unsafe_allow_placement`), the repository guard scripts that read README,
   ARCHITECTURE and `ci.yml`, the A1 layering lint (`node scripts/module-graph.mjs --check-backedges`
   against `docs/layering_baseline.csv`), and the cargo-free node suites of those scripts
@@ -88,9 +89,10 @@ models or workloads were executed.
   time and fails on a workspace without a tracked lock, on an action missing from its reviewed list, and on
   an action whose license `deny.toml` does not allow. The cargo-deny check runs only when the dependency set
   changed since a run that passed. `scripts/license-check-fingerprint.mjs`
-  hashes every input the verdict depends on: every tracked `Cargo.lock`, `deny.toml`, the workspace members'
-  name/version/license/license-file/publish, the cargo-deny version, the `licenses` job text and both
-  scripts. A pass stores an Actions-cache marker keyed `license-check-<fingerprint>`; a run that finds the
+  hashes every tracked `Cargo.lock`, `deny.toml`, the workspace members'
+  name/version/license/license-file/publish, the cargo-deny version, the `licenses` workflow job block,
+  and both scripts. A composite-action-body-only change is not itself a fingerprint input.
+  A pass stores an Actions-cache marker keyed `license-check-<fingerprint>`; a run that finds the
   marker skips the check and says so in its step summary. A miss (a new dependency set, or an evicted
   marker) runs the check. Pull-request caches are visible only to that pull request, so `main` keeps its own
   markers. Advisories stay in `deny` on every run: the advisory database moves without the graph changing.
@@ -167,6 +169,40 @@ crates plus their transitive reverse dependents (workspace consumers).
 
 The rule in `CLAUDE.md` "confirm CI went green on the landing SHA" now reads: green **for the class of the
 landing diff**, plus a green nightly for the heavy groups.
+
+## Feature powersets and rustdoc coverage
+
+`feature-powerset` runs only on Mondays at 06:00 UTC or on manual dispatch, not on
+push or PR even with `CI: full`. It typechecks combinations without running tests:
+
+- `sefer-alloc` and other workspace members with features use depth 2 with
+  `--no-dev-deps` (lib + bins, not all targets). The workflow discovers the
+  remaining members via Cargo metadata; featureless members are not enumerated.
+  The root keeps three targeted test cfg checks instead of an all-targets
+  sweep (see [item 95](CORRECTNESS_OPEN_ITEMS.md)).
+- `aligned-vmem` uses depth 2 with `--all-targets` to catch cfg mismatches in
+  tests, benches and examples. Cargo-hack does not allow that flag with `--no-dev-deps`.
+- The job also retains the root depth-3 sweep for selected allocation-policy
+  features, the root MSRV each-feature check, and the PowerPC check that `std`
+  compiles but `experimental` rejects targets without 64-bit atomics. Powerset
+  checks run offline after one locked fetch because `--no-dev-deps` can require
+  temporary lockfile reconciliation.
+
+The `fast`-tier `docs` job treats rustdoc warnings as errors. It keeps the root's
+stable all-features row and its separate manifest feature-list row (`production`,
+with defaults). The workspace composite checks every other member on stable with
+all features, then checks the exact docs.rs configuration where already declared:
+`all-features`, or the listed `features` with defaults unless `no-default-features` opts out.
+The action runs nightly `cargo doc` with declared `rustdoc-args` (e.g. `--cfg docsrs`)
+passed via `CARGO_ENCODED_RUSTDOCFLAGS` alongside `-D warnings`; without declared
+args the row uses stable `cargo doc`. For already-declared configurations, the
+docs.rs row is skipped only when the manifest declares `all-features = true`
+without rustdoc arguments. The dedicated `globalalloc-model` workflow also
+reads its exact docs.rs features and rustdoc args from metadata and retains its
+separate internal all-features row. These rows catch warnings specific to the
+published feature set that an all-features build need not expose. Members without
+`[package.metadata.docs.rs]` get only the all-features row from the workspace action;
+adding declarations to EV-1-scoped manifests is deferred pending EV-1 reverify.
 
 ## Test-impact map (CI-T1 stage 2)
 

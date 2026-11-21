@@ -7,7 +7,7 @@ import {
   architectureTestFileCountMatchesReality,
   libRsSeamInventoryMatchesCanonicalGrep,
   productionFeatureBundleDocSitesMatchCargoToml,
-  readmeUnsafeInventoryCountsMatchReality,
+  readmeUnsafeInventoryMatchesReality,
   verificationInventoryMatchesDocs,
 } from '../scripts/verify-doc-inventories.mjs';
 
@@ -64,14 +64,29 @@ test('verification_inventory_matches_docs passes and rejects a mutated inventory
   });
 });
 
-test('readme_unsafe_inventory_counts_match_reality passes and rejects mutated count', () => {
+test('readme_unsafe_inventory_matches_reality checks exact paths and per-file counts', () => {
   fixture(({ root, put }) => {
-    put('src/seam.rs', '#![allow(unsafe_code)]\n');
+    put('src/seam.rs', '  #![allow(unsafe_code)]\n// #[allow(unsafe_code)]\n');
     put('crates/member/site.rs.tmpl', '#[allow(unsafe_code)]\n');
-    put('README.md', '**1** tier-1 module-level seams; **1** tier-2 item-scoped allows across **1** files');
-    assert.doesNotThrow(() => readmeUnsafeInventoryCountsMatchReality(root));
-    put('README.md', '**2** tier-1 module-level seams; **1** tier-2 item-scoped allows across **1** files');
-    assert.throws(() => readmeUnsafeInventoryCountsMatchReality(root), /tier-1 count drifted/);
+    const readme = [
+      '### Where `unsafe` lives (the complete list)',
+      '#### Tier 1 — module-level seams',
+      '| File | Sites | Audit notes |',
+      '|---|---:|---|',
+      '| [`src/seam.rs`](src/seam.rs) | 1 | — |',
+      '#### Tier 2 — item-scoped allows',
+      '| File | Sites | Audit notes |',
+      '|---|---:|---|',
+      '| [`crates/member/site.rs.tmpl`](crates/member/site.rs.tmpl) | 1 | — |',
+    ].join('\n');
+    put('README.md', readme);
+    assert.doesNotThrow(() => readmeUnsafeInventoryMatchesReality(root));
+    put('README.md', readme.replaceAll('crates/member/site.rs.tmpl', 'src/stale.rs'));
+    assert.throws(() => readmeUnsafeInventoryMatchesReality(root), /tier 2 paths or per-file counts drifted/);
+    put('README.md', readme.replaceAll('src/seam.rs', 'src/stale.rs'));
+    assert.throws(() => readmeUnsafeInventoryMatchesReality(root), /tier 1 paths or per-file counts drifted/);
+    put('README.md', readme.replace('| 1 | — |', '| 2 | — |'));
+    assert.throws(() => readmeUnsafeInventoryMatchesReality(root), /tier 1 paths or per-file counts drifted/);
   });
 });
 
