@@ -7,20 +7,23 @@
 //! `crate::heap::Heap::...` (task #17 cleaned them up). This test fails if any
 //! such stale reference is reintroduced.
 //!
-//! Two independent checks over `src/**/*.rs` and `crates/core/sefer-alloc-core/src/**/*.rs`:
+//! Four legacy allocator-interface scans walk Rust sources in `src/` and
+//! the `src/` trees of `sefer-alloc-core`, `sefer-registry`, and `sefer-segment`.
+//! Each tree must contribute at least one Rust file; a populated tree cannot
+//! mask an empty one.
 //!
-//!   1. NO `crate::heap::` path anywhere — the `heap` module no longer exists,
-//!      so any such intra-doc link is broken. Zero exceptions.
+//!   1. No `crate::heap::` paths: the module no longer exists. No exceptions.
+//!   2. No backtick-quoted `Heap` mentions except in the registry's
+//!      `heap_core/core.rs`, where the module doc describes its removal.
+//!      The live `fallback::with_heap` function is unrelated.
+//!   3. No removed abandon/adopt identifiers outside the historical allowlist.
+//!   4. No `OwnedSidecar` references: the sidecar interface uses free functions.
 //!
-//!   2. NO `` `Heap` `` doc-comment mention (the removed TYPE) outside the
-//!      single allowed site: `registry/heap_core/core.rs`, whose module doc
-//!      legitimately describes the removal in the PAST tense. Note this is
-//!      distinct from the LIVE, unrelated `fallback::with_heap` internal
-//!      function (a similar name, NOT the removed type) — that file contains
-//!      no `` `Heap` `` type mention and so needs no exception.
+//! `sefer-policy` is config/THP only, with targeted policy-doc witnesses here;
+//! `sefer-platform` is OS-only. Neither is part of these four tree scans.
 //!
-//! Doc-only guard: it reads source text, never links against the crate, so it
-//! runs in every feature configuration.
+//! These guards read source text without linking the allocator, so they run
+//! in every feature configuration.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -50,6 +53,28 @@ fn registry_crate_src_dir() -> PathBuf {
 fn alloc_core_crate_src_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/core/sefer-alloc-core/src")
 }
+
+/// Collect the source trees that carry allocator interface and implementation docs.
+fn allocator_interface_files() -> Vec<PathBuf> {
+    let segment = Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/core/sefer-segment/src");
+    let mut files = Vec::new();
+    for root in [
+        src_dir(),
+        alloc_core_crate_src_dir(),
+        registry_crate_src_dir(),
+        segment,
+    ] {
+        let before = files.len();
+        rs_files(&root, &mut files);
+        assert!(
+            files.len() > before,
+            "no Rust source files found under {}",
+            root.display()
+        );
+    }
+    files
+}
+
 #[test]
 fn root_rustdoc_ci_covers_all_and_docs_rs_features_with_strict_warnings() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -154,11 +179,7 @@ fn cargo_toml_comment_source_paths_exist() {
 
 #[test]
 fn no_crate_heap_module_path() {
-    let mut files = Vec::new();
-    rs_files(&src_dir(), &mut files);
-    assert!(!files.is_empty(), "no source files found");
-    rs_files(&alloc_core_crate_src_dir(), &mut files);
-    rs_files(&registry_crate_src_dir(), &mut files);
+    let files = allocator_interface_files();
 
     let mut offenders = Vec::new();
     for file in &files {
@@ -186,10 +207,7 @@ fn no_removed_heap_type_doc_mentions() {
         .join("heap_core")
         .join("core.rs");
 
-    let mut files = Vec::new();
-    rs_files(&src_dir(), &mut files);
-    rs_files(&alloc_core_crate_src_dir(), &mut files);
-    rs_files(&registry_crate_src_dir(), &mut files);
+    let files = allocator_interface_files();
 
     let mut offenders = Vec::new();
     for file in &files {
@@ -260,10 +278,7 @@ fn no_stale_abandon_adopt_substrate_references() {
         registry_crate_src_dir().join("registry/bootstrap/mod.rs"),
     ];
 
-    let mut files = Vec::new();
-    rs_files(&src_dir(), &mut files);
-    rs_files(&alloc_core_crate_src_dir(), &mut files);
-    rs_files(&registry_crate_src_dir(), &mut files);
+    let files = allocator_interface_files();
 
     let mut offenders = Vec::new();
     for file in &files {
@@ -2139,33 +2154,18 @@ fn large_cache_config_doc_matches_budget_and_headroom_behavior() {
 /// this crate. `alloc_core::platform::sidecar` deliberately exposes FREE
 /// FUNCTIONS over `*mut T` (`reserve`, `reserve_zeroed_with`, `deref`,
 /// `deref_mut`) with no wrapping handle type at all, so any `OwnedSidecar`
-/// mention anywhere in `src/**/*.rs` is a stale reference to an API that was
-/// never added (or was removed). This guard fails on the first such mention in
-/// any source file, and separately pins the module doc's statement of the
-/// free-function surface.
+/// mention in the allocator interface trees listed above is a stale reference
+/// to an API that was never added. The scan reports all such mentions.
+///
+/// The fixed-file witness below separately pins the module doc's statement
+/// of the free-function surface without relying on the tree scan.
+/// It reads the sidecar module in `sefer-alloc-core`, where that API lives.
 ///
 /// Doc-only guard: reads source text, never links the crate, so it runs in
 /// every feature configuration.
 #[test]
 fn no_owned_sidecar_references_anywhere() {
-    // Both source trees are scanned with each traversal's nonemptiness asserted independently.
-    let mut files = Vec::new();
-    rs_files(&src_dir(), &mut files);
-    assert!(!files.is_empty(), "no source files found under root src/");
-    let mut member_files = Vec::new();
-    rs_files(&alloc_core_crate_src_dir(), &mut member_files);
-    assert!(
-        !member_files.is_empty(),
-        "no source files found under crates/core/sefer-alloc-core/src — the new-member \
-         walk is broken and the negative coverage would be vacuous"
-    );
-    files.extend(member_files);
-    let before = files.len();
-    rs_files(&registry_crate_src_dir(), &mut files);
-    assert!(
-        files.len() > before,
-        "no source files found under crates/core/sefer-registry/src"
-    );
+    let files = allocator_interface_files();
 
     let mut offenders = Vec::new();
     for file in &files {

@@ -2,10 +2,12 @@
 //
 // ## The two rules
 //
-//   Rule 1 (NO-BARE-ABORT): every `std::process::abort` occurrence under
-//   `src/**/*.rs` must live in the ONE sanctioned terminator file — since plan
-//   step P1.4 that is `crates/platform/sefer-platform/src/fatal.rs` (the
-//   `sefer-alloc` side keeps only the `alloc_core::fatal` conduit, which
+//   Rule 1 (NO-BARE-ABORT): every `std::process::abort` occurrence in the
+//   scanned Rust sources (root src/, sefer-alloc-core, sefer-registry,
+//   sefer-segment, and sefer-platform) must live in the ONE sanctioned
+//   terminator file — since plan step P1.4 that is
+//   `crates/platform/sefer-platform/src/fatal.rs` (the `sefer-alloc` side
+//   keeps only the `alloc_core::fatal` conduit, which
 //   contains no abort). R6-T15 converted the bare-abort sites to
 //   `platform::fatal` so every termination carries a diagnostic message; the
 //   allowlist mechanism is RETAINED but currently EMPTY, so any bare abort
@@ -405,12 +407,15 @@ function runSelfTest() {
 function realScan() {
   let violations = 0;
   let allowed = 0;
-  // P2.2: scan both the root src/ tree and the sefer-alloc-core crate's src/
-  // tree — the crate's production code must stay under this gate after the move.
+  // Keep the moved runtime sources in Rule 1's scope, including P2.1 segment
+  // and P1.4 platform (which owns the sanctioned terminator). sefer-policy
+  // is pure no_std and does not participate in allocator termination.
   const scanRoots = [
     join(REPO_ROOT, 'src'),
     join(REPO_ROOT, 'crates/core/sefer-alloc-core/src'),
     join(REPO_ROOT, 'crates/core/sefer-registry/src'),
+    join(REPO_ROOT, 'crates/core/sefer-segment/src'),
+    join(REPO_ROOT, 'crates/platform/sefer-platform/src'),
   ];
   for (const full of scanRoots.flatMap((dir) => [...walkRs(dir)])) {
     const rel = toRepoRel(full).split(sep).join('/');
