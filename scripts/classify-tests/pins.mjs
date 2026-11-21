@@ -51,7 +51,7 @@
 // All functions are pure over explicit inputs (paths + text), so tests can
 // feed synthetic surfaces.
 
-import { readdirSync, statSync, readFileSync } from 'node:fs';
+import { statSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const MAX_SURFACE_FILE_BYTES = 4 * 1024 * 1024;
@@ -64,63 +64,28 @@ function readCapped(abs) {
   try { return readFileSync(abs, 'utf8'); } catch { return null; }
 }
 
-/** Enumerate pin surfaces under rootDir. Returns [{file, kind, text}] sorted by file. */
-export function collectPinSurfaces(rootDir) {
+/** Collect pin surfaces from Git-enumerated repo-relative POSIX paths, sorted by file. */
+export function collectPinSurfaces(rootDir, files) {
   const out = [];
-  const push = (absRel, kind) => {
-    const abs = join(rootDir, absRel);
-    const text = readCapped(abs);
-    if (text !== null) out.push({ file: absRel, kind, text });
-  };
-  for (const wf of listDir(join(rootDir, '.github', 'workflows'), '.yml')) {
-    push(`.github/workflows/${wf}`, 'ci_workflow');
-  }
-  for (const act of listDir(join(rootDir, '.github', 'actions'), null, true)) {
-    const f = join(rootDir, '.github', 'actions', act, 'action.yml');
-    const text = readCapped(f);
-    if (text !== null) out.push({ file: `.github/actions/${act}/action.yml`, kind: 'ci_action', text });
-  }
-  for (const s of listDir(join(rootDir, 'scripts'), '.mjs')) {
-    push(`scripts/${s}`, 'script');
-  }
-  push('README.md', 'doc');
-  push('ARCHITECTURE.md', 'doc');
-  walkDocs(join(rootDir, 'docs'), 'docs', out);
-  for (const j of listDir(join(rootDir, 'docs', 'verification'), '.json')) {
-    push(`docs/verification/${j}`, 'doc_json');
+  for (const file of files) {
+    let kind;
+    if (/^\.github\/workflows\/[^/]*\.yml$/.test(file)) kind = 'ci_workflow';
+    else if (/^\.github\/actions\/[^/]+\/action\.yml$/.test(file)) kind = 'ci_action';
+    else if (/^scripts\/[^/]*\.mjs$/.test(file)) kind = 'script';
+    else if (/^docs\/verification\/[^/]*\.json$/.test(file)) kind = 'doc_json';
+    else if (file === 'README.md' || file === 'ARCHITECTURE.md') kind = 'doc';
+    else if (file.startsWith('docs/') && file.endsWith('.md')) {
+      if (file.slice(file.lastIndexOf('/') + 1).includes('_raw_')) continue;
+      // Skip the generated report to avoid pinning targets named in our own output.
+      if (file.startsWith('docs/perf/TEST_TARGET_CLASSIFICATION_')) continue;
+      kind = 'doc';
+    } else continue;
+
+    const text = readCapped(join(rootDir, file));
+    if (text !== null) out.push({ file, kind, text });
   }
   out.sort((a, b) => a.file.localeCompare(b.file) || a.kind.localeCompare(b.kind));
   return out;
-}
-
-function listDir(dir, ext, dirsOnly = false) {
-  let ents;
-  try { ents = readdirSync(dir, { withFileTypes: true }); } catch { return []; }
-  return ents.filter((e) => {
-    if (dirsOnly) return e.isDirectory();
-    return e.isFile() && (!ext || e.name.endsWith(ext));
-  }).map((e) => e.name).sort((a, b) => a.localeCompare(b));
-}
-
-function walkDocs(dir, rel, out) {
-  let ents;
-  try { ents = readdirSync(dir, { withFileTypes: true }); } catch { return; }
-  for (const e of ents.sort((a, b) => a.name.localeCompare(b.name))) {
-    const childRel = `${rel}/${e.name}`;
-    if (e.isDirectory()) walkDocs(join(dir, e.name), childRel, out);
-    else if (e.isFile() && e.name.endsWith('.md')) {
-      // Skip raw perf logs / noise by class (they are .log, not .md, anyway —
-      // kept here as an explicit guard so future _raw_*.md never slow the scan).
-      if (/_raw_/.test(e.name)) continue;
-      // Exclude the classification suite's own outputs (self-reference /
-      // idempotence: see header comment). The report lists member names, so
-      // scanning its own echo would pin those targets.
-      if (childRel.startsWith('docs/perf/TEST_TARGET_CLASSIFICATION_') && childRel.endsWith('.md')) continue;
-      if (/^docs\/test_target_classification_.*\.csv$/.test(childRel)) continue;
-      const text = readCapped(join(dir, e.name));
-      if (text !== null) out.push({ file: childRel, kind: 'doc', text });
-    }
-  }
 }
 
 /** Count occurrences of `needle` with word boundaries in text. */

@@ -28,7 +28,7 @@
 // Pure functions over (path, contents) so tests can point them at synthetic
 // trees.
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Remove block comments (slash-star ... star-slash) and // comments
@@ -163,26 +163,21 @@ export function cfgFacts(bodies) {
  * Derive the first-config-wins marker list from root and registry sources.
  * Preserve root hits first; look in the extracted crate for remaining markers.
  */
-export function deriveFirstConfigWinMarkers(srcDir, candidates, grepFirstHit) {
-  const registryRel = 'crates/core/sefer-registry/src';
-  const registryDir = join(srcDir, '..', registryRel);
-  const registrySources = existsSync(registryDir) ? listSrcRustFiles(registryDir).map(file => ({
-    file: `${registryRel}/${file}`,
-    text: readFileSync(join(registryDir, file), 'utf8'),
-  })) : [];
+export function deriveFirstConfigWinMarkers(repoRoot, candidates, srcFiles, registrySrcFiles) {
+  const sources = [...new Set([...srcFiles, ...registrySrcFiles])].map(file => ({
+    file,
+    text: readFileSync(join(repoRoot, file), 'utf8'),
+  }));
   const markers = [];
-  for (const c of candidates) {
-    let hit = grepFirstHit(srcDir, c);
-    if (!hit) {
-      const re = markerRegex(c);
-      for (const { file, text } of registrySources) {
-        const m = text.match(re);
-        if (!m) continue;
-        hit = { file, line: text.slice(0, m.index).split(/\r?\n/).length };
-        break;
-      }
+  for (const marker of candidates) {
+    const re = markerRegex(marker);
+    for (const { file, text } of sources) {
+      const match = text.match(re);
+      if (!match) continue;
+      const line = text.slice(0, match.index).split(/\r?\n/).length;
+      markers.push({ marker, src_hit: { file, line } });
+      break;
     }
-    if (hit) markers.push({ marker: c, src_hit: hit });
   }
   return markers;
 }
@@ -352,16 +347,16 @@ export function rawMatchZone(raw, re) {
     : state === 'str' ? 'string-literal' : 'code';
 }
 
-// Enumerate all Rust files under srcDir (sorted, relative to srcDir).
-export function listSrcRustFiles(srcDir) {
-  const out = [];
-  const walk = (dir, rel) => {
-    for (const ent of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      const childRel = rel === '' ? ent.name : `${rel}/${ent.name}`;
-      if (ent.isDirectory()) walk(join(dir, ent.name), childRel);
-      else if (ent.isFile() && ent.name.endsWith('.rs')) out.push(childRel);
-    }
-  };
-  walk(srcDir, '');
-  return out;
+// Compare sibling names, not whole paths, to preserve depth-first walk order.
+export function listSrcRustFiles(files, srcRoot) {
+  const prefix = srcRoot.endsWith('/') ? srcRoot : `${srcRoot}/`;
+  return files.filter(file => file.startsWith(prefix) && file.endsWith('.rs'))
+    .map(file => ({ file, parts: file.slice(prefix.length).split('/') }))
+    .sort(({ parts: a }, { parts: b }) => {
+      for (let i = 0; i < Math.min(a.length, b.length); i++) {
+        if (a[i] !== b[i]) return a[i].localeCompare(b[i]) || (a[i] < b[i] ? -1 : 1);
+      }
+      return a.length - b.length;
+    })
+    .map(({ file }) => file);
 }
