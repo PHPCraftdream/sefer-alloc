@@ -13,5 +13,8 @@ runs:
       shell: bash -e {0}
       run: |
         set -o pipefail
+        (printf '%s ' 'miri-core-tb before cargo UTC' && date -u +%T) || :
         cargo miri test --features "alloc-global internals bench-internals" --test b4_r1_pin_cache_miri -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-b4-r1-pin-cache-tree.log"
+        (printf '%s ' 'miri-core-tb after cargo UTC' && date -u +%T) || :
         grep -F "[b4_r1_pin_cache_miri] COMPLETE narrow" "$RUNNER_TEMP/miri-b4-r1-pin-cache-tree.log"
+        (printf '%s ' 'miri-core-tb after grep UTC' && date -u +%T) || :

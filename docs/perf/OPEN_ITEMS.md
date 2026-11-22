@@ -158,19 +158,20 @@ stays as an `[L]` revisit item; no runtime change shipped for it. Evidence:
 155. **[A] CI critical path after the Miri sharding — the full-run wall-clock did not shrink; check-matrix rows and aarch64 are the next lever.** (Filed 2026-11-17, revision 4 of `docs/plans/2026-11-15-workspace-restructure-plan.md`.)
 
    > **Current state**
-   > - **Status:** OPEN — Miri sharding and target-time rebalance landed; full-run wall-clock did not shrink.
-   > - **Current:** Miri jobs were sharded by target (PR #261, `cd316a3b`) and rebalanced by measured target times (PR #262, `dcccdcf3`), but the full-run time did not shrink. The critical path moved to the longest jobs: test (aarch64), miri (core, TreeBorrows pin cache), check-matrix, miri-plain (heavy), and kani. PR #262 CI final-run job times identify these longest jobs; before sharding, the six-full-attempt medians in `docs/perf/CI_LONG_JOBS.md` include check-matrix at 1728 s.
-   > - **P2.5 update (2026-11-21):** check-matrix row shards (`55416030`) and parallel aarch64 cells (`12ea1d57`) landed. All three check-matrix and four aarch64 jobs ran green in PR #283 CI `44940255958`; execution is not evidence of a wall-clock improvement.
-   > - **Next trigger:** recompute the critical path from comparable full-run windows with `node scripts/ci-long-jobs.mjs`; no timing verdict at this close-out.
-   > - **Evidence:** `docs/perf/CI_LONG_JOBS.md`; PR #260 (`19cbc5f8`), #261 (`cd316a3b`), and #262 (`dcccdcf3`).
+   > - **Status:** OPEN — timing comparison awaits CI.
+   > - **Current:** dispatch run `44980151837`: TreeBorrows job `137078737064` took 1905 s. At ~882 s, 10M basic blocks appeared in `Box::new -> carve_block_with_refill -> dealloc_small`. First COMPLETE was 1445.33 s after Running; grep echo followed 401.24 s later. Teardown spills after the marker; the remainder is unknown. UTC timestamps were added before Cargo, after `cargo | tee`, and after grep.
+   > - **Prospective assumption/estimate, not guaranteed or observed:** 256 B → 16 KiB Small class with unchanged oracles gives nominal 14,865 → 233 allocations if the first segment is the fresh primordial one.
+   > - **Blocked witness:** no comparable successful full-run timing after P2.5; this dispatch cannot establish a full-run latency change or the ~19-minute target.
+   > - **Next trigger:** runtime-verify the change and measure comparable full runs in CI before any timing claim.
+   > - **Evidence:** `docs/perf/CI_LONG_JOBS.md`; [dispatch run 44980151837](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/44980151837); PR #260 (`19cbc5f8`), #261 (`cd316a3b`), and #262 (`dcccdcf3`). P2.5 row-sharded check-matrix and parallel aarch64 cells ran green in PR #283 CI `44940255958`; that is not a timing comparison.
 
 156. **[A] Miri shard rebalance by measured target times — periodic, as data accumulates.** (Filed 2026-11-17, revision 4 of `docs/plans/2026-11-15-workspace-restructure-plan.md`.)
 
    > **Current state**
-   > - **Status:** OPEN — rebalanced once; revisit when accumulated runtimes skew again.
-   > - **Current:** Miri shards were equilibrated once by PR #262 (`dcccdcf3`) using measured target times. The shard-union equivalence gate is `node scripts/verify-miri-sharding.mjs`.
-   > - **Next trigger:** when newly accumulated shard runtimes skew again, rebalance by the PR #262 method and rerun the equivalence gate.
-   > - **Evidence:** PR #262 (`dcccdcf3`); `scripts/verify-miri-sharding.mjs`; `.github/workflows`.
+   > - **Status:** OPEN — periodic rebalance remains a separate, broader follow-up; the proposed NL7 split is rejected.
+   > - **Current:** NL7 remains one target/job and the same libtest process (default parallel tests on one Miri interpreter host thread); run `44980151837`, job `137078736967`, reports aggregate `finished in 1494.92s`, not isolated test timings. Estimate from the single-interpreter-thread model: 1209–1495 s (~20–25 min), with at most ~5 min saving for an extra job. Reconsider NL7 splitting only if that estimate becomes lighter.
+   > - **Next trigger:** rebalance the broader Miri shards only when accumulated CI timings show skew; do not treat the rejected NL7 split as accepted.
+   > - **Evidence:** PR #262 (`dcccdcf3`); `scripts/verify-miri-sharding.mjs`; `.github/workflows`; CI run `44980151837`, job `137078736967`.
 
 157. **[A] P0.2 test-merge pilot verdict NO-GO (2026-11-17).** (Filed 2026-11-17; criterion fixed in `docs/perf/P0_2_TEST_MERGE_PILOT.md` BEFORE measurements.)
 
