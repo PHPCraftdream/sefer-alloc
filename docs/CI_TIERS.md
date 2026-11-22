@@ -38,6 +38,11 @@ The `kani` job stays in the `seam` tier. P2.4 runs 12 `sefer-segment` and 8
 `sefer-alloc-core` package-check rows. Historical timings in
 [CI_LONG_JOBS.md](perf/CI_LONG_JOBS.md) are not timings for this split.
 
+The job declares `timeout-minutes: 35`, and its composite action writes 30-second
+runner telemetry (memory, load, heaviest processes) that a final `if: always()`
+step prints — the response to repeated hosted-runner losses recorded as
+`docs/CORRECTNESS_OPEN_ITEMS.md` item 289. No proof command or harness changed.
+
 `scripts/ci/effective-workflow.mjs` is a restricted static reader, not a YAML execution
 engine. Local action calls must be unconditional single-key calls after checkout.
 Action inputs/outputs, nested local actions, unsupported contexts, missing files and
