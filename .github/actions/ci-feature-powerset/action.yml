@@ -125,7 +125,7 @@ runs:
         if cargo check --locked --color never --target powerpc-unknown-linux-gnu --no-default-features --features experimental > powerset-experimental.log 2>&1; then
           echo 'expected experimental compile_error'; exit 1
         fi
-        grep -F 'requires 64-bit atomics (target_has_atomic = "64")' powerset-experimental.log
+        grep -E '^error: (sefer-alloc: .*requires|sefer-concurrent requires a target with) 64-bit atomics \(target_has_atomic = "64"\)' powerset-experimental.log
     - uses: actions/upload-artifact@v6
       if: ${{ failure() && !cancelled() }}
       with:

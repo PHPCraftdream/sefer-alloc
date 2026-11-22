@@ -124,9 +124,9 @@ Corpora and crash artifacts are written under `fuzz/artifacts/region_ops/` and
 
 ## LeakSanitizer: registry route metadata
 
-The weekly `fuzz-run` job enables symbolization for all three targets, but applies
-[`lsan.supp`](lsan.supp) **only to `heap_core_ops`**. Leak detection and exit-time
-checks remain enabled. The suppression `*ensure_capacity*`
+The weekly `fuzz-run` job enables symbolization job-wide for all targets, and applies
+[`lsan.supp`](lsan.supp) to **`heap_core_ops` and `safe_global_alloc_ops`**. Leak
+detection and exit-time checks remain enabled. The suppression `*ensure_capacity*`
 matches the specific method. The namespace-qualified pattern
 `route_slots::RouteSlots*::ensure_capacity` originally shipped here did NOT
 match under CI: scheduled run 38260710015 (2026-10-12, job 114850160710)
