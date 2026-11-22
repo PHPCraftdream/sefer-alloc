@@ -393,17 +393,18 @@ Item 260 is CLOSED (2026-11-09); the accepted two-phase proof and full history a
 
 282. **[T, filed 2026-11-17, revision 4 of `docs/plans/2026-11-15-workspace-restructure-plan.md`] CI critical path — rebalance check-matrix by rows and aarch64 (perf item 155).**
 
-    - **Status:** OPEN — the full-run wall-clock did not shrink after Miri sharding; longest jobs are now the next lever.
-    - **Current:** the longest jobs include test (aarch64), miri (core, TreeBorrows pin cache), check-matrix, miri-plain (heavy), and kani. The pre-sharding check-matrix median was 1728 s across six full attempts; see perf item 155 in `docs/perf/OPEN_ITEMS.md`.
-    - **Next trigger:** check-matrix row shards (`55416030`) and parallel aarch64 cells (`12ea1d57`) landed and both ran green in PR #283 CI `44940255958`. Measure comparable full runs to determine the new critical path before claiming a gain or closing this card.
-    - **Evidence:** perf item 155 in `docs/perf/OPEN_ITEMS.md`; `docs/perf/CI_LONG_JOBS.md`; PRs #260 (`19cbc5f8`), #261 (`cd316a3b`), #262 (`dcccdcf3`).
+    - **Status:** OPEN — timing comparison awaits CI.
+    - **Current:** dispatch run `44980151837` at SHA `39e59d2a` observed TreeBorrows job `137078737064` at 1905 s. At ~882 s, 10M basic blocks appeared in `Box::new -> carve_block_with_refill -> dealloc_small`; first COMPLETE was 1445.33 s after Running and grep echo followed 401.24 s later. Teardown spills after the marker; remainder unknown. The action now timestamps UTC before Cargo, after `cargo | tee`, and after grep. This single dispatch is not a full-run comparison; P2.5 row-sharded check-matrix and parallel aarch64 cells ran green in PR #283 CI `44940255958`, without a timing comparison.
+    - **Prospective assumption/estimate, not guaranteed or observed:** 256 B → 16 KiB Small class with unchanged oracles gives nominal 14,865 → 233 allocations if the first segment is the fresh primordial one. CI runtime verification is pending.
+    - **Next trigger:** runtime-verify the change and measure comparable full runs before making timing claims or closing this card.
+    - **Evidence:** perf item 155 in `docs/perf/OPEN_ITEMS.md`; `docs/perf/CI_LONG_JOBS.md`; dispatch run `44980151837`, job `137078737064`; PR #283 CI `44940255958`.
 
 283. **[T, filed 2026-11-17, revision 4 of `docs/plans/2026-11-15-workspace-restructure-plan.md`] Miri shard rebalance cadence (perf item 156).**
 
-    - **Status:** OPEN — periodic rebalance when measured target runtimes skew.
-    - **Current:** shards were equilibrated once by PR #262 (`dcccdcf3`) using measured target times; the union-equivalence gate is `node scripts/verify-miri-sharding.mjs`. See perf item 156 in `docs/perf/OPEN_ITEMS.md`.
-    - **Next trigger:** when newly accumulated shard runtimes skew again, rebalance by the PR #262 method and rerun the equivalence gate.
-    - **Evidence:** perf item 156 in `docs/perf/OPEN_ITEMS.md`; PR #262 (`dcccdcf3`); `scripts/verify-miri-sharding.mjs`; `.github/workflows`.
+    - **Status:** OPEN — broader periodic rebalance remains; proposed NL7 split rejected.
+    - **Current:** NL7 remains unsplit: its tests run in the same libtest process (default parallel tests on one Miri interpreter host thread). Run `44980151837`, job `137078736967`, reports aggregate `finished in 1494.92s`, not isolated test timings. Estimate from the single-interpreter-thread model: 1209–1495 s (~20–25 min), at most ~5 min saved by an extra job. Reconsider NL7 splitting only if that estimate becomes lighter.
+    - **Next trigger:** rebalance broader Miri shards only when accumulated CI timings show skew; keep NL7 unsplit unless its ladder estimate becomes lighter.
+    - **Evidence:** perf item 156 in `docs/perf/OPEN_ITEMS.md`; PR #262 (`dcccdcf3`); run `44980151837`, job `137078736967`; `scripts/ci-long-jobs.mjs`.
 
 285. **[T] Page-constant scanner: production provenance no longer reaches the extracted VM wrappers.** (P2.5 #187, 2026-11-21; distinct from item 73’s opaque-call residual.)
 

@@ -579,13 +579,13 @@ Static exact command rows only; no multiline/YAML inference. Key retains cargo/c
   - numa-shim-mock .github/actions/ci-numa-shim-mock/action.yml:34 [ubuntu-latest]
 - --features "alloc-global internals bench-internals" --test b4_r1_pin_cache_miri -- narrow 2>&1 | tee "$RUNNER_TEMP/miri-b4-r1-pin-cache.log" (2 occurrences)
   - miri-core-pin-cache .github/actions/ci-miri-core-pin-cache/action.yml:22 [ubuntu-latest]
-  - miri-core-tb .github/actions/ci-miri-core-tb/action.yml:16 [ubuntu-latest]
+  - miri-core-tb .github/actions/ci-miri-core-tb/action.yml:17 [ubuntu-latest]
 
 Miri compile sharing is only hypothetical: execution passes with different MIRIFLAGS (including SB/TB) remain distinct verification; Windows/macOS/Linux rows are not cross-OS duplicates.
 
 ## Miri target attribution and bounded sharding
 
-One target means zero target-splitting ceiling. For multiple targets, ideal 2-way wall-time saving cannot exceed execution/2 and is constrained by the largest measured explicit target. This is a theoretical bound on measured log execution, not CPU or whole-job time; build/setup replication and load imbalance remain extra costs.
+Historical display-name aliases resolve to the current workflow jobs. Their explicit-target and action-command counts below describe today’s reachable actions, not historical command counts. One target means zero target-splitting ceiling. For multiple targets, ideal 2-way wall-time saving cannot exceed execution/2 and is constrained by the largest measured explicit target. This is a theoretical bound on measured log execution, not CPU or whole-job time; build/setup replication and load imbalance remain extra costs.
 
 | job/run | explicit targets / action commands | log execution s | largest known target s | 2-way theoretical saving upper s |
 |---|---:|---:|---:|---:|
@@ -650,7 +650,15 @@ Miri SB/TB execution remains semantically distinct even where compile artifacts 
 
 The three divisible miri jobs are sharded by test target; `miri-core-tb` is a single target and stays whole. The union of each shard set equals the old job's command set exactly (mechanical proof: `node scripts/verify-miri-sharding.mjs`; a normalized record = target/package/features/MIRIFLAGS/post-`--` args/provenance model/borrows). Shards were rebalanced against per-target durations measured in run 43984907030; expected savings are ESTIMATES derived from the attribution table above, minus shard setup/toolchain replication and balance overhead.
 
-| old job | shards | content | measured basis / expected old-execution split (estimate) |
+Run [44980151837](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/44980151837), SHA 39e59d2a: TreeBorrows job 137078737064 succeeded in 1905 s. At ~882 s, 10M basic blocks appeared on `Box::new -> carve_block_with_refill -> dealloc_small`. First COMPLETE was 1445.33 s after Running; grep echo followed 401.24 s later. Teardown spills after the marker; the remaining time is unknown. UTC timestamps were added before Cargo, after `cargo | tee`, and after grep.
+
+Prospective assumption/estimate, not guaranteed or observed: Small class 256 B → 16 KiB, with the same oracles; nominal allocations 14,865 → 233 if the first segment is the fresh primordial one.
+
+NL7 remains unsplit: both tests run in the same libtest process (default parallel tests on one Miri interpreter host thread); aggregate `finished in 1494.92s`, with no isolated test timings. Estimate from the single-interpreter-thread model: 1209–1495 s (~20–25 min), at most ~5 min saved by an extra job. Split rejected; reconsider only if that estimate becomes lighter.
+
+P2.5 history: check-matrix row shards and parallel aarch64 cells ran green in PR #283 CI run 44940255958; this was not a wall-time comparison.
+
+| old job | current shards | content | measured basis / split timing (measurements vs estimates) |
 |---|---|---|---|
 | miri (core) | `miri-core-pin-cache` | the single dominant target `b4_r1_pin_cache_miri` (narrow, strict/SB) | 807.3–1345.6 s of 1271.0–2094.4 s execution — one target, so it alone bounds a shard; old execution is split ≈1346 s vs ≈690 s (unbalanced by construction, the floor is the target itself) |
 | miri (core) | `miri-core-rest` | the other 39 commands (J13b guards/advice, Box witnesses incl. 4 EXPECTED-RED pins, leases, merged regressions) | ≈690 s of the measured execution, dominated by `miri_global_box_acceptance` 146.4–157.2 s and `miri_depot_cycle` 131.2–140.4 s |
