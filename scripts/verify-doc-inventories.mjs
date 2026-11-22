@@ -146,75 +146,31 @@ export function readmeUnsafeInventoryMatchesReality(root = defaultRoot) {
   }
 }
 
-function fileToModulePath(src, file) {
-  let rel = relative(src, file).replaceAll('\\', '/');
-  if (rel.startsWith('../') || rel === '..') return null;
-  rel = rel.replace(/\.rs$/, '');
-  const parts = rel.split('/');
-  const last = parts.at(-1);
-  if (last === 'mod' || last === 'lib') return null;
-  return parts.join('::') || null;
-}
+const unsafeInventoryHeading = 'Where `unsafe` lives (the complete list)';
+const unsafeInventoryAnchor = '#where-unsafe-lives-the-complete-list';
+const unsafeInventoryPointer = `README.md § "${unsafeInventoryHeading}" (anchor \`${unsafeInventoryAnchor}\`)`;
+const canonicalSeamGrep = "grep -rnE '^\\s*#!?\\[allow\\(unsafe_code\\)\\]' src/ crates/";
 
-function isPureModulePath(token) {
-  return token.includes('::') && !/[{}()]/.test(token) && /^[A-Za-z0-9_:]+$/.test(token);
-}
-
-function extractSeamBullets(libRs) {
-  const startAnchor = 'confined modules lift this with';
-  const endAnchor = 'is enforced by the compiler';
-  const start = libRs.indexOf(startAnchor);
-  assert.notEqual(start, -1, 'lib.rs seam-inventory start anchor `confined modules lift this with`');
-  const afterStart = start + startAnchor.length;
-  const end = libRs.indexOf(endAnchor, afterStart);
-  assert.notEqual(end, -1, 'lib.rs seam-inventory end anchor `is enforced by the compiler`');
-  const region = libRs.slice(afterStart, end);
-  const seams = [];
-  for (const line of region.split(/\r?\n/)) {
-    const stripped = line.replace(/^\/\//, '').trimStart();
-    if (!stripped.startsWith('* ')) continue;
-    const afterStar = stripped.slice(2);
-    const open = afterStar.indexOf('`');
-    if (open === -1) continue;
-    const rest = afterStar.slice(open + 1);
-    const close = rest.indexOf('`');
-    if (close === -1) continue;
-    const token = rest.slice(0, close);
-    if (isPureModulePath(token)) seams.push(token);
+/** Pin lib.rs's `// ── Unsafe inventory` comment section to README's authoritative section and the canonical grep. */
+export function libRsUnsafeInventoryHeaderMatchesReadme(root = defaultRoot) {
+  const headingLine = `### ${unsafeInventoryHeading}`;
+  assert.ok(read(root, 'README.md').split(/\r?\n/).includes(headingLine),
+    `README.md is missing the authoritative unsafe-inventory heading line \`${headingLine}\``);
+  const lines = read(root, 'src', 'lib.rs').replaceAll('\r\n', '\n').split('\n');
+  const start = lines.findIndex(line => line.startsWith('// ── Unsafe inventory'));
+  assert.ok(start !== -1, 'src/lib.rs is missing the `// ── Unsafe inventory` section banner');
+  const section = [];
+  for (const line of lines.slice(start + 1)) {
+    const trimmed = line.trimStart();
+    if (!trimmed.startsWith('//') || trimmed.startsWith('// ──')) break;
+    section.push(trimmed.replace(/^\/\/ ?/, ''));
   }
-  return seams;
-}
-
-/** Compare src/lib.rs's internal seam list to the source-text allow grep. */
-export function libRsSeamInventoryMatchesCanonicalGrep(root = defaultRoot) {
-  const src = rootPath(root, 'src');
-  const files = [];
-  const walk = dir => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const path = join(dir, entry.name);
-      if (entry.isDirectory()) walk(path);
-      else if (entry.name.endsWith('.rs')) files.push(path);
-    }
-  };
-  walk(src);
-  assert.ok(files.length > 0, 'no source files found under src/');
-  const actual = new Set();
-  for (const file of files) {
-    const text = readFileSync(file, 'utf8');
-    if (text.split(/\r?\n/).some(line => line.trimStart().startsWith('#![allow(unsafe_code)]'))) {
-      const modulePath = fileToModulePath(src, file);
-      if (modulePath !== null) actual.add(modulePath);
-    }
-  }
-  assert.ok(actual.size > 0, 'no tier-1 seams found under src/');
-  const documented = new Set(extractSeamBullets(read(root, 'src', 'lib.rs')));
-  assert.ok(documented.size > 0, 'no seam bullets found in src/lib.rs header — the inventory region anchors (`confined modules lift this with` / `is enforced by the compiler`) may have moved');
-  const actualSorted = [...actual].sort();
-  const documentedSorted = [...documented].sort();
-  const missing = actualSorted.filter(name => !documented.has(name));
-  const phantom = documentedSorted.filter(name => !actual.has(name));
-  assert.ok(missing.length === 0 && phantom.length === 0,
-    `src/lib.rs's prose seam inventory drifted from the canonical grep \`grep -rnE '^\\s*#!?\\[allow\\(unsafe_code\\)\\]' src/ crates/\` (src/ tier-1 modules only):\n  actual tier-1 src/ seams (${actual.size}): ${JSON.stringify(actualSorted, null, 2)}\n  documented in lib.rs (${documented.size}): ${JSON.stringify(documentedSorted, null, 2)}\n  MISSING from lib.rs (a real seam with no prose entry): ${JSON.stringify(missing, null, 2)}\n  PHANTOM in lib.rs (documented but no real seam file): ${JSON.stringify(phantom, null, 2)}\n  Add the missing module(s) to lib.rs's INTERNAL-seam inventory (or remove a phantom), matching the existing \`* \`module::path\` — ...\` bullet style.`);
+  const pointerHits = flattenWhitespace(section.join('\n')).split(unsafeInventoryPointer).length - 1;
+  assert.ok(pointerHits === 1,
+    `src/lib.rs's Unsafe inventory section must reference \`${unsafeInventoryPointer}\` exactly once (found ${pointerHits}) — the README section was renamed or the pointer drifted`);
+  const grepHits = section.filter(line => line.trim() === canonicalSeamGrep).length;
+  assert.ok(grepHits === 1,
+    `src/lib.rs's Unsafe inventory section must carry the canonical anchored seam grep as a full trimmed line exactly once (found ${grepHits}), pointing at src/ crates/ with the comment-proof anchor: \`${canonicalSeamGrep}\``);
 }
 
 /** Pin every prose spelling of the production Cargo feature bundle. */
@@ -247,7 +203,7 @@ const checks = [
   ['architecture_test_file_count_matches_reality', architectureTestFileCountMatchesReality],
   ['verification_inventory_matches_docs', verificationInventoryMatchesDocs],
   ['readme_unsafe_inventory_matches_reality', readmeUnsafeInventoryMatchesReality],
-  ['lib_rs_seam_inventory_matches_canonical_grep', libRsSeamInventoryMatchesCanonicalGrep],
+  ['lib_rs_unsafe_inventory_header_matches_readme', libRsUnsafeInventoryHeaderMatchesReadme],
   ['production_feature_bundle_doc_sites_match_cargo_toml', productionFeatureBundleDocSitesMatchCargoToml],
 ];
 
