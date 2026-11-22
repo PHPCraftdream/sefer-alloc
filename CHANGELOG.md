@@ -41,7 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [docs] The crate-root header in `src/lib.rs` no longer duplicates the seam inventory: it points to the README's workspace unsafe inventory as the stable source of truth.
 - [docs] Repeated hosted-runner loss in the `kani proofs` CI job is tracked in the correctness open-items index; the cause is not established and no proof or workflow change is made, pending evidence collection on the next occurrence.
 - [test] A conditional pin-cache Loom shim re-export makes the `alloc-decommit` feature combination compile without changing the model.
-- [CI] The Miri scenario `tests/b4_r1_pin_cache_miri.rs` uses the exact 16 KiB small class instead of 256 B, which cuts its modeled allocation count before the first foreign free from 14,865 to 233 (oracles unchanged); `miri-core-tb` now logs UTC timestamps around Cargo and grep. The speed-up is not measured yet.
+- [CI] The Miri scenario `tests/b4_r1_pin_cache_miri.rs` uses the exact 16 KiB small class instead of 256 B, which cuts its modeled allocation count before the first foreign free from 14,865 to 233 (oracles unchanged); `miri-core-tb` now logs UTC timestamps around Cargo and grep. PR CI measured the three Miri jobs that run it at 3 min 19 s, 4 min 2 s and 3 min 22 s (previously about 32, 18 and 19 minutes).
+- [docs] The Miri NL-7 shard keeps its scenarios: the ladder:drop time ratio (4.86 against a byte ratio of 1.16) contradicts a byte-proportional cost model, so the shortest-Large-top-rung edit is rejected and the non-byte component is left to a separate CI experiment. No code changed.
 
 ### Final comparative measurements under hard CPU limits (2026-11-15)
 
