@@ -64,10 +64,12 @@ mod cell {
     #[global_allocator]
     static GLOBAL: SeferAlloc = SeferAlloc::new();
 
-    /// One small size class, 256 B / align 8 — the same class the native
-    /// `tests/b4_r1_pin_cache.rs` fixtures free through the routed path.
+    /// One exact 16 KiB stock small size class, align 8. `16384` is among
+    /// the stock extras and align 8 uses the small-align route, matching the
+    /// allocation path this Miri oracle exercises.
+    const BLOCK_BYTES: usize = 16 * 1024;
     #[repr(align(8))]
-    struct Block([u8; 256]);
+    struct Block([u8; BLOCK_BYTES]);
 
     impl Block {
         fn addr(&self) -> usize {
@@ -76,6 +78,10 @@ mod cell {
     }
 
     const SEGMENT: usize = 4 * 1024 * 1024;
+    // Bound the search to eight segments' worth of payload (2048 typed Boxes
+    // at this class), enough to encounter several segment bases without an
+    // unbounded allocation search under Miri.
+    const SEARCH_CAP: usize = 8 * SEGMENT / BLOCK_BYTES;
 
     fn base_of(addr: usize) -> usize {
         addr & !(SEGMENT - 1)
@@ -123,9 +129,13 @@ mod cell {
 
         // ------------------------------------------------------------------
         // Track only two bases. Keep all other live Boxes in spill rather than
-        // dropping inside the allocation loop; the bounded search is runtime-heavy
-        // under Miri (up to 32,768 allocations).
+        // dropping inside the allocation loop. Distinct segment bases can hash
+        // to the same direct-mapped TLS slot, so select the second base only
+        // when it differs under the configured cache layout; the fresh worker
+        // adopts this same process-wide slot count on its first insertion.
         // ------------------------------------------------------------------
+        let pin_cache_slots = RoutePin::dbg_route_pin_cache_slots();
+        let cache_slot = |base: usize| (base / SEGMENT) & (pin_cache_slots - 1);
         let mut groups: Vec<(usize, Vec<Box<Block>>)> = Vec::new();
         // Keep surplus owners alive until their Box destructors run at the end
         // of this frame; the selected witness is one owning allocation per base,
@@ -136,14 +146,17 @@ mod cell {
                 && groups.iter().all(|(_, v)| !v.is_empty())
                 && groups.iter().any(|(_, v)| v.len() >= 2)
         };
-        for _ in 0..32_768 {
-            let block = Box::new(Block([0u8; 256]));
+        for _ in 0..SEARCH_CAP {
+            let block = Box::new(Block([0u8; BLOCK_BYTES]));
             let base = base_of(block.addr());
             let open_slot = groups.len() < 2;
+            let distinct_cache_slot = groups.first().map_or(true, |(first_base, _)| {
+                cache_slot(base) != cache_slot(*first_base)
+            });
             match groups.iter_mut().find(|(g, _)| *g == base) {
                 Some((_, v)) if v.len() < 2 => v.push(block),
                 Some(_) => spill.push(block),
-                None if open_slot => groups.push((base, vec![block])),
+                None if open_slot && distinct_cache_slot => groups.push((base, vec![block])),
                 None => spill.push(block),
             }
             if covered(&groups) {
