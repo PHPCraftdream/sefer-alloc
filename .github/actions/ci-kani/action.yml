@@ -3,6 +3,19 @@ description: Original kani job steps
 runs:
   using: composite
   steps:
+    # Card 289: three `kani proofs` runs lost their runner at 45:00-46:01
+    # against an 18-24 min green norm. Sample runner state while proofs run.
+    - name: Start runner telemetry
+      shell: bash
+      run: |
+        set -euo pipefail
+        log="$RUNNER_TEMP/kani-telemetry.log"
+        : > "$log"
+        nohup bash -c 'while :; do
+            { date -u "+%Y-%m-%dT%H:%M:%SZ"; free -m | grep "^Mem:"; uptime;
+              ps -eo pid,rss,etimes,args --sort=-rss | head -4 | cut -c1-220; } >> "$1" 2>&1
+            sleep 30
+          done' _ "$log" >/dev/null 2>&1 &
     - uses: dtolnay/rust-toolchain@stable
     - name: Install kani-verifier
       # ci-default-shell: preserve original implicit runner shell
@@ -28,3 +41,15 @@ runs:
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
       run: cargo kani -p sefer-registry --all-features
+    - name: Runner telemetry tail
+      if: always()
+      shell: bash
+      run: |
+        set -euo pipefail
+        log="$RUNNER_TEMP/kani-telemetry.log"
+        if [ -f "$log" ]; then
+          echo "--- last 150 lines of $log ---"
+          tail -n 150 "$log"
+        else
+          echo "no runner telemetry was collected"
+        fi

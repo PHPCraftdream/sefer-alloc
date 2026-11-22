@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [CI] Fixed the sprint-close verifier so it matches matrix job names that carry literal text after `(` before
   the first expression (check-matrix shards); those legs now match while all existing gate checks are retained.
 - [CI] Accept either PowerPC atomics diagnostic and apply the existing LeakSanitizer suppression to `safe_global_alloc_ops`.
+- [CI] `kani proofs` declares `timeout-minutes: 35` and its composite action prints 30-second runner
+  telemetry (memory, load, heaviest processes) from an `if: always()` tail step; no proof or command changed.
 - [docs] Fixed a broken self intra-doc link in the first line of the module doc of
   `crates/core/sefer-alloc-core/src/alloc_core/platform/sidecar.rs` (``[`sidecar`]`` → plain code `` `sidecar` ``),
   flagged by the new strict workspace rustdoc row. No allocator logic or method changes. The same PR requests one

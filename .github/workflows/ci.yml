@@ -707,6 +707,9 @@ jobs:
     if: needs.changes.outputs.seam == 'true'
     name: kani proofs
     runs-on: ubuntu-latest
+    # Card 289: green runs take 18-24 min and three lost-runner events landed
+    # at 45:00-46:01; a 35-min ceiling cancels with a kept log instead.
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-kani
