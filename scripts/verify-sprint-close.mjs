@@ -14,14 +14,30 @@ import { hasFullTrailer, parseJobs } from './ci-plan.mjs';
 
 const OPTIONAL_GROUPS = new Set(['weekly', 'dispatch']);
 
-/** Text of a job name before its first matrix expression, e.g. `test (` for `test (${{ matrix.target }})`. */
-export function staticPrefix(name) {
-  return name.split('${{')[0].trim();
-}
+/** Regex-escape every regex metacharacter in a literal job-name fragment. */
+const escapeLit = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** Whether an API job name is the declared job `prefix` itself or one of its matrix legs. */
-function matches(name, prefix) {
-  return name === prefix || name.startsWith(`${prefix} (`) || (prefix.endsWith('(') && name.startsWith(prefix));
+/**
+ * Matcher for one declared job name. When the declaration contains complete
+ * `${{ ... }}` placeholders, each expression becomes a nonempty wildcard and
+ * every literal fragment (including punctuation and whitespace) is matched
+ * verbatim; the whole name must match. Static declarations match exactly.
+ * @returns {(apiName: string) => boolean}
+ */
+export function jobMatcher(declaredName) {
+  if (!/\$\{\{.*?\}\}/.test(declaredName)) return n => n === declaredName;
+  let re = '^';
+  for (let rest = declaredName; rest.length;) {
+    const i = rest.indexOf('${{');
+    if (i < 0) { re += escapeLit(rest); break; }
+    re += escapeLit(rest.slice(0, i));
+    const j = rest.indexOf('}}', i + 3);
+    if (j < 0) return n => n === declaredName; // unbalanced: fall back to exact
+    re += '.+?';
+    rest = rest.slice(j + 2);
+  }
+  const rx = new RegExp(re + '$');
+  return n => rx.test(n);
 }
 
 /**
@@ -33,13 +49,12 @@ export function fullRunVerdict(declared, apiJobs) {
   const problems = [];
   const bad = apiJobs.filter(j => j.conclusion === 'failure' || j.conclusion === 'cancelled' || j.conclusion === 'timed_out');
   for (const j of bad) problems.push(`job "${j.name}" ${j.conclusion}`);
-  const optionalPrefixes = declared.filter(d => OPTIONAL_GROUPS.has(d.group)).map(d => staticPrefix(d.name || d.id)).filter(Boolean);
-  const isOptional = n => optionalPrefixes.some(p => matches(n, p));
+  const optional = declared.filter(d => OPTIONAL_GROUPS.has(d.group)).map(d => jobMatcher(d.name || d.id));
+  const isOptional = n => optional.some(match => match(n));
   for (const d of declared) {
     if (OPTIONAL_GROUPS.has(d.group)) continue;
-    const prefix = staticPrefix(d.name || d.id);
-    if (!prefix) continue;
-    const mine = apiJobs.filter(j => matches(j.name, prefix));
+    const match = jobMatcher(d.name || d.id);
+    const mine = apiJobs.filter(j => match(j.name));
     if (mine.length === 0) problems.push(`no job ran for "${d.name || d.id}" (group ${d.group})`);
     else if (!mine.some(j => j.conclusion === 'success')) problems.push(`job "${d.name || d.id}" (group ${d.group}) did not succeed: ${mine.map(j => j.conclusion).join(',')}`);
   }
@@ -56,10 +71,14 @@ function gh(args) {
 }
 
 function selftest() {
+  // Mirror of the real ci.yml shape: the three matrix jobs declare complete
+  // `${{ ... }}` placeholders in their names; every other job name is static.
   const ci = [
     'jobs:', '  changes:', '    name: plan', '  fmt:', '    name: fmt',
-    '  test:', '    needs: changes', "    if: needs.changes.outputs.fast == 'true'", '    name: test',
+    '  test:', '    needs: changes', "    if: needs.changes.outputs.fast == 'true'", '    name: test (${{ matrix.label }})',
     '  miri:', '    needs: changes', "    if: needs.changes.outputs.seam == 'true'", '    name: miri',
+    '  check-matrix:', '    needs: changes', "    if: needs.changes.outputs.fast == 'true'",
+    '    name: check-matrix (shard ${{ matrix.shard }}/${{ strategy.job-total }})',
     '  arch:', '    needs: changes', "    if: needs.changes.outputs.os == 'true'", '    name: cross (${{ matrix.target }})',
     '  fuzz-run:', "    if: ${{ github.event.schedule == '0 6 * * 1' }}", '    name: fuzz run',
   ].join('\n');
@@ -67,15 +86,33 @@ function selftest() {
   let n = 0;
   const eq = (a, b, m) => { assert.deepEqual(a, b, m); n++; };
   const J = (name, conclusion = 'success') => ({ name, conclusion });
-  const green = [J('plan'), J('fmt'), J('test'), J('miri'), J('cross (a)'), J('cross (b)'), J('fuzz run', 'skipped')];
-  eq(fullRunVerdict(declared, green).ok, true, 'a full green run, weekly job skipped');
+  const green = [
+    J('plan'), J('fmt'), J('test (core tiers)'), J('miri'),
+    J('check-matrix (shard 1/3)'), J('check-matrix (shard 2/3)'), J('check-matrix (shard 3/3)'),
+    J('cross (a)'), J('cross (b)'), J('fuzz run', 'skipped'),
+  ];
+  eq(fullRunVerdict(declared, green).ok, true, 'a full green run: all matrix shards + legs, weekly job skipped');
+  eq(fullRunVerdict(declared, green.filter(j => !j.name.startsWith('check-matrix (shard '))).problems, ['no job ran for "check-matrix (shard ${{ matrix.shard }}/${{ strategy.job-total }})" (group fast)'], 'zero check-matrix legs: exactly one named missing-job diagnostic');
+  const oneRed = green.map(j => (j.name === 'check-matrix (shard 2/3)' ? J('check-matrix (shard 2/3)', 'failure') : j));
+  eq(fullRunVerdict(declared, oneRed), { ok: false, problems: ['job "check-matrix (shard 2/3)" failure'] }, 'one red leg: ok=false and exactly one failed-job diagnosis');
   eq(fullRunVerdict(declared, green.filter(j => j.name !== 'miri').concat(J('miri', 'skipped'))).ok, false, 'a skipped seam job is not full');
   eq(fullRunVerdict(declared, green.filter(j => j.name !== 'miri')).problems.length, 1, 'a missing job is named');
+  const shardSkip = green.map(j => (j.name === 'check-matrix (shard 1/3)' ? J('check-matrix (shard 1/3)', 'skipped') : j));
+  eq(fullRunVerdict(declared, shardSkip).ok, false, 'a skipped required shard is not full');
+  eq(fullRunVerdict(declared, shardSkip).problems.includes('job "check-matrix (shard 1/3)" was skipped, so the run was not full'), true, 'skipped shard diagnosed as not optional');
   eq(fullRunVerdict(declared, green.concat(J('extra', 'failure'))).ok, false, 'a failed job fails the run');
-  eq(fullRunVerdict(declared, green.map(j => (j.name === 'test' ? J('test', 'cancelled') : j))).ok, false, 'a cancelled job fails the run');
-  eq(fullRunVerdict(declared, green.map(j => (j.name === 'cross (b)' ? J('cross (b)', 'failure') : j))).ok, false, 'one failed matrix leg fails');
-  eq(fullRunVerdict(declared, [J('plan'), J('fmt'), J('test')]).ok, false, 'a docs-sized run is not full');
-  eq(staticPrefix('cross (${{ matrix.target }})'), 'cross (', 'prefix before a matrix expression');
+  eq(fullRunVerdict(declared, [J('plan'), J('fmt'), J('test (core tiers)'), J('check-matrix (shard 1/3)'), J('check-matrix (shard 2/3)'), J('check-matrix (shard 3/3)')]).ok, false, 'a docs-sized run is not full');
+  eq(fullRunVerdict(declared, green.concat(J('fmt (extra)')).map(j => (j.name === 'fmt' ? null : j)).filter(Boolean))
+    .problems, ['no job ran for "fmt" (group always)'], 'near-prefix "fmt (extra)" is not "fmt": exactly one missing diagnostic');
+  // The matcher must not let one leg satisfy another declaration.
+  eq(fullRunVerdict(declared, green.map(j => j.name === 'cross (a)' ? J('cross (a)', 'cancelled') : j)).ok, false, 'cancelled cross leg fails, not shadowed by a test leg');
+  // anchored whole-name matching: no accidental suffix swallowing.
+  eq(jobMatcher('miri')('miri (extra)'), false, 'static declaration is exact');
+  eq(jobMatcher('cross (${{ matrix.target }})')('cross (x)'), true, 'one expression placeholder');
+  eq(jobMatcher('check-matrix (shard ${{ matrix.shard }}/${{ strategy.job-total }})')('check-matrix (shard 2/3)'), true, 'two adjacent placeholders with literal separator');
+  eq(jobMatcher('check-matrix (shard ${{ matrix.shard }}/${{ strategy.job-total }})')('check-matrix (shard 2/3) '), false, 'anchored: trailing whitespace not swallowed');
+  eq(fullRunVerdict([{ id: 'test', name: 'test', group: 'fast' }], [J('test impact map')]),
+    { ok: false, problems: ['no job ran for "test" (group fast)'] }, 'a static declaration is not satisfied by an impact-mapped name');
   eq(hasFullTrailer('x\n\nCI: full\n'), true, 'trailer helper is shared with the planner');
   console.log(JSON.stringify({ version: 1, status: 'PASS', scope: 'verify-sprint-close selftest', checks: n }));
 }
