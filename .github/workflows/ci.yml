@@ -900,6 +900,7 @@ jobs:
           FEATURES=$(cargo metadata --locked --no-deps --format-version 1 | jq -er '.packages[] | select(.name == "sefer-alloc") | .metadata.docs.rs.features | join(",")')
           test -n "$FEATURES"
           RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps -p sefer-alloc --features "$FEATURES"
+      - uses: ./.github/actions/ci-workspace-doc-lint
   deny:
     name: cargo-deny advisories
     runs-on: ubuntu-latest
@@ -919,3 +920,22 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-feature-powerset
+      # Keep the root (item 95) and aligned-vmem (existing all-targets) sweeps above.
+      - name: Depth-2 powersets for remaining workspace members
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          packages=$(cargo metadata --locked --offline --no-deps --format-version 1 | jq -er '
+            .workspace_members as $members | .packages[]
+            | select(.id as $id | $members | index($id))
+            | select(.name != "sefer-alloc" and .name != "aligned-vmem")
+            | select(.features | length > 0)
+            | .name')
+          failed=0
+          while IFS= read -r package; do
+            echo "::group::$package"
+            cargo hack check --offline -p "$package" --feature-powerset --depth 2 --no-dev-deps --keep-going || failed=1
+            echo '::endgroup::'
+          done <<< "$packages"
+          exit "$failed"

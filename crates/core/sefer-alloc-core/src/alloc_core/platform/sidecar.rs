@@ -1,4 +1,4 @@
-//! [`sidecar`] — the owner-only lazily-materialised sidecar primitive
+//! `sidecar` — the owner-only lazily-materialised sidecar primitive
 //! (R14-9, task #294; reservation-owning since R2-12).
 //!
 //! ## Why this exists

@@ -26,11 +26,11 @@ function markdownSection(text, heading) {
   return end === -1 ? body : body.slice(0, end);
 }
 
-function rustInventoryFiles(dir, out = []) {
+function inventoryFiles(dir, out = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) rustInventoryFiles(path, out);
-    else if (entry.name.endsWith('.rs') || entry.name.endsWith('.rs.tmpl')) out.push(path);
+    if (entry.isDirectory()) inventoryFiles(path, out);
+    else if (entry.isFile()) out.push(path);
   }
   return out;
 }
@@ -116,33 +116,34 @@ export function verificationInventoryMatchesDocs(root = defaultRoot) {
   }
 }
 
-/** Recount unsafe allow sites from src/ and crates/ and pin README's totals. */
-export function readmeUnsafeInventoryCountsMatchReality(root = defaultRoot) {
-  const files = [...rustInventoryFiles(rootPath(root, 'src')), ...rustInventoryFiles(rootPath(root, 'crates'))];
+/** Compare README's file-by-file allow inventory to the canonical scan. */
+export function readmeUnsafeInventoryMatchesReality(root = defaultRoot) {
+  const files = [...inventoryFiles(rootPath(root, 'src')), ...inventoryFiles(rootPath(root, 'crates'))];
   assert.ok(files.length > 0, 'no source files found under src/ or crates/');
-  let tier1 = 0;
-  let tier2 = 0;
-  const tier2Files = new Set();
+  const tiers = [new Map(), new Map()];
   for (const file of files) {
-    const text = readFileSync(file, 'utf8');
-    for (const line of text.split(/\r?\n/)) {
-      const stripped = line.trimStart();
-      if (stripped.startsWith('#![allow(unsafe_code)]')) tier1 += 1;
-      else if (stripped.startsWith('#[allow(unsafe_code)]')) {
-        tier2 += 1;
-        tier2Files.add(file);
-      }
+    const path = relative(root, file).replaceAll(/\\/g, "/");
+    for (const line of readFileSync(file, 'utf8').split('\n')) {
+      const match = /^\s*#(!?)\[allow\(unsafe_code\)\]/.exec(line);
+      if (!match) continue;
+      const tier = tiers[match[1] ? 0 : 1];
+      tier.set(path, (tier.get(path) ?? 0) + 1);
     }
   }
-  assert.ok(tier1 > 0, 'no tier-1 `#![allow(unsafe_code)]` seams found');
-  assert.ok(tier2 > 0, 'no tier-2 `#[allow(unsafe_code)]` sites found');
-  const readmeFlat = flattenWhitespace(read(root, 'README.md'));
-  const t1Needle = `**${tier1}** tier-1 module-level seams`;
-  assert.ok(readmeFlat.includes(t1Needle), `README.md tier-1 count drifted: re-grep found ${tier1} \`#![allow(unsafe_code)]\` module-level seams but the README does not contain the token \`${t1Needle}\`. Update the tier-1 count in the summary line below the tier-2 table.`);
-  const t2SitesNeedle = `**${tier2}** tier-2 item-scoped allows`;
-  assert.ok(readmeFlat.includes(t2SitesNeedle), `README.md tier-2 site count drifted: re-grep found ${tier2} \`#[allow(unsafe_code)]\` item-scoped sites but the README does not contain the token \`${t2SitesNeedle}\`. Update the tier-2 summary.`);
-  const t2FilesNeedle = `across **${tier2Files.size}** files`;
-  assert.ok(readmeFlat.includes(t2FilesNeedle), `README.md tier-2 file count drifted: re-grep found tier-2 sites across ${tier2Files.size} distinct files but the README does not contain the token \`${t2FilesNeedle}\`. Update the tier-2 summary.`);
+  const inventory = read(root, 'README.md').replaceAll('\r\n', '\n').split('### Where `unsafe` lives (the complete list)')[1]?.split(/\n#{1,3} /)[0];
+  assert.ok(inventory, 'README unsafe inventory section missing');
+  const tables = [...inventory.matchAll(/^#### Tier ([12]) — [^\n]*\n+((?:\|[^\n]*(?:\n|$))+)/gm)];
+  assert.deepEqual(tables.map(match => match[1]), ['1', '2'], 'README unsafe inventory tier tables missing, reordered, or duplicated');
+  for (const [i, [, , table]] of tables.entries()) {
+    const documented = new Map();
+    for (const line of table.trimEnd().split('\n').slice(2)) {
+      const match = /^\| \[`([^`]+)`\]\(([^)]+)\) \| (\d+) \|/.exec(line);
+      assert.ok(match && match[1] === match[2], `README tier ${i + 1}: invalid path row: ${line}`);
+      assert.ok(!documented.has(match[1]), `README tier ${i + 1}: duplicate path: ${match[1]}`);
+      documented.set(match[1], Number(match[3]));
+    }
+    assert.deepEqual(documented, tiers[i], `README tier ${i + 1} paths or per-file counts drifted`);
+  }
 }
 
 function fileToModulePath(src, file) {
@@ -245,7 +246,7 @@ export function productionFeatureBundleDocSitesMatchCargoToml(root = defaultRoot
 const checks = [
   ['architecture_test_file_count_matches_reality', architectureTestFileCountMatchesReality],
   ['verification_inventory_matches_docs', verificationInventoryMatchesDocs],
-  ['readme_unsafe_inventory_counts_match_reality', readmeUnsafeInventoryCountsMatchReality],
+  ['readme_unsafe_inventory_matches_reality', readmeUnsafeInventoryMatchesReality],
   ['lib_rs_seam_inventory_matches_canonical_grep', libRsSeamInventoryMatchesCanonicalGrep],
   ['production_feature_bundle_doc_sites_match_cargo_toml', productionFeatureBundleDocSitesMatchCargoToml],
 ];

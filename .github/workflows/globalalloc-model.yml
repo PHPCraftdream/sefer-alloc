@@ -189,8 +189,26 @@ jobs:
       # in addition to (not instead of) an --all-features row.
       - name: Build EXACT docs.rs feature set
         env:
-          RUSTDOCFLAGS: --cfg docsrs -D warnings
-        run: cargo doc -p globalalloc-model --features proptest,arbitrary --no-deps
+          RUSTDOCFLAGS: -D warnings
+        shell: bash
+        run: |
+          set -euo pipefail
+          docs=$(cargo metadata --locked --no-deps --format-version 1 | jq -ec '.packages[] | select(.name == "globalalloc-model") | .metadata.docs.rs')
+          features=()
+          if [[ $(jq -r '.all-features // false' <<< "$docs") == true ]]; then
+            features+=(--all-features)
+          else
+            if [[ $(jq -r '."no-default-features" // false' <<< "$docs") == true ]]; then
+              features+=(--no-default-features)
+            fi
+            list=$(jq -r '.features // [] | join(",")' <<< "$docs")
+            if [[ -n $list ]]; then
+              features+=(--features "$list")
+            fi
+          fi
+          args=$(jq -c '."rustdoc-args" // []' <<< "$docs")
+          python3 -I -c 'import json, os, sys; from subprocess import check_call; check_call(sys.argv[2:], env=dict(os.environ, CARGO_ENCODED_RUSTDOCFLAGS="\x1f".join([*json.loads(sys.argv[1]), "-D", "warnings"])))' \
+            "$args" cargo doc --locked --no-deps -p globalalloc-model "${features[@]}"
       # The all-features row is the internal superset: it additionally turns
       # on `internals`, catching doc breaks (e.g. intra-doc links) that exist
       # only in that configuration. It is NOT docs.rs's build — the step
