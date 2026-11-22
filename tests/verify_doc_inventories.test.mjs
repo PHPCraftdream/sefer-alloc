@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import {
   architectureTestFileCountMatchesReality,
-  libRsSeamInventoryMatchesCanonicalGrep,
+  libRsUnsafeInventoryHeaderMatchesReadme,
   productionFeatureBundleDocSitesMatchCargoToml,
   readmeUnsafeInventoryMatchesReality,
   verificationInventoryMatchesDocs,
@@ -90,18 +90,39 @@ test('readme_unsafe_inventory_matches_reality checks exact paths and per-file co
   });
 });
 
-test('lib_rs_seam_inventory_matches_canonical_grep passes and rejects a phantom seam', () => {
+test('lib_rs_unsafe_inventory_header_matches_readme passes and rejects stale pointer or wrong grep', () => {
   fixture(({ root, put }) => {
-    put('src/foo/bar.rs', '#![allow(unsafe_code)]\n');
+    const readme = ['## Intro', '### Where `unsafe` lives (the complete list)', 'body', '## Other'].join('\n');
     const lib = [
-      '// confined modules lift this with',
-      '// * `foo::bar` — documented seam',
-      '// is enforced by the compiler',
+      '// ── Unsafe inventory — see README.md, not here ─────────────',
+      '//',
+      '// The complete list of `unsafe` seams lives in README.md § "Where `unsafe`',
+      '// lives (the complete list)" (anchor `#where-unsafe-lives-the-complete-list`).',
+      '//',
+      '//   grep -rnE \'^\\s*#!?\\[allow\\(unsafe_code\\)\\]\' src/ crates/',
+      '//',
+      '// ── next section ────────────────────────────────────────────',
+      '// later mention: grep -rnE \'^\\s*#!?\\[allow\\(unsafe_code\\)\\]\' src/ crates/',
     ].join('\n');
+    const grep = "grep -rnE '^\\s*#!?\\[allow\\(unsafe_code\\)\\]' src/ crates/";
+    put('README.md', readme);
     put('src/lib.rs', lib);
-    assert.doesNotThrow(() => libRsSeamInventoryMatchesCanonicalGrep(root));
-    put('src/lib.rs', lib.replace('foo::bar', 'foo::missing'));
-    assert.throws(() => libRsSeamInventoryMatchesCanonicalGrep(root), /prose seam inventory drifted/);
+    assert.doesNotThrow(() => libRsUnsafeInventoryHeaderMatchesReadme(root));
+    put('README.md', readme.replace('(the complete list)', '(renamed)'));
+    assert.throws(() => libRsUnsafeInventoryHeaderMatchesReadme(root), /authoritative unsafe-inventory heading line/);
+    put('README.md', readme);
+    put('src/lib.rs', lib.replace('lives (the complete list)', 'lives (the full list)'));
+    assert.throws(() => libRsUnsafeInventoryHeaderMatchesReadme(root), /exactly once \(found 0\) — the README section was renamed/);
+    put('src/lib.rs', lib.replace(' (anchor `#where-unsafe-lives-the-complete-list`)', ''));
+    assert.throws(() => libRsUnsafeInventoryHeaderMatchesReadme(root), /exactly once \(found 0\)/);
+    put('src/lib.rs', lib.replace('src/ crates/', 'src/'));
+    assert.throws(() => libRsUnsafeInventoryHeaderMatchesReadme(root), /canonical anchored seam grep as a full trimmed line exactly once \(found 0\)/);
+    put('src/lib.rs', lib.replace("grep -rnE '^", "grep -rnE '"));
+    assert.throws(() => libRsUnsafeInventoryHeaderMatchesReadme(root), /canonical anchored seam grep as a full trimmed line exactly once \(found 0\)/);
+    put('src/lib.rs', lib.replace(grep, ''));
+    assert.throws(() => libRsUnsafeInventoryHeaderMatchesReadme(root), /canonical anchored seam grep as a full trimmed line exactly once \(found 0\)/);
+    put('src/lib.rs', lib.replace('// ── next section', `//   ${grep}\n//\n// ── next section`));
+    assert.throws(() => libRsUnsafeInventoryHeaderMatchesReadme(root), /canonical anchored seam grep as a full trimmed line exactly once \(found 2\)/);
   });
 });
 

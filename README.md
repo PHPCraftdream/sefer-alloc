@@ -783,8 +783,9 @@ Source of truth: `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`
 (tier 1); `#[...]` matches are item-scoped allows (tier 2), including
 unsafe declarations and scoped blocks. Both are comment-proof: `^\s*#!?\[` requires
 the line to begin with the attribute, not a `//` prefix.
-[The root crate header](src/lib.rs) mirrors the root `src/` tier-1 seams;
-the tables below cover both trees and both tiers. The allow inventory does not
+[The linked root crate header](src/lib.rs) points to this README section and
+the source command above; the tables below are complete for both trees and
+both tiers. The allow inventory does not
 list crates with no matching attributes: `sefer-policy` owns safe policy
 arithmetic and atomics; `sefer-region` delegates generational storage to
 `slotmap`; `size-classes` owns pointer-free size-class arithmetic; `sefer-ghost`
