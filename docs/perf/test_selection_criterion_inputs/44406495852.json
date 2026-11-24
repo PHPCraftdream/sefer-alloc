@@ -1,0 +1,17 @@
+{
+  "id": "44406495852",
+  "createdAt": "2026-11-18T21:55:50Z",
+  "event": "pull_request",
+  "headBranch": "p196a-check-matrix-shards-20261118",
+  "headSha": "0ba25b9776e12dfd62f2a9e5662e2ab4e9b8c225",
+  "status": "completed",
+  "conclusion": "success",
+  "selection": null,
+  "core": null,
+  "coreLookup": "unavailable",
+  "issues": [
+    "run verification failed: gh call budget exhausted; gh api repos/PHPCraftdream/sefer-alloc/actions/runs/44406495852"
+  ],
+  "attempt": 1,
+  "collectionCheck": "unstable"
+}

@@ -1,0 +1,17 @@
+{
+  "id": "44415701369",
+  "createdAt": "2026-11-18T22:52:43Z",
+  "event": "push",
+  "headBranch": "main",
+  "headSha": "6084a833366a34b87bc860785199c65487d7b4a5",
+  "status": "completed",
+  "conclusion": "success",
+  "selection": null,
+  "core": null,
+  "coreLookup": "unavailable",
+  "issues": [
+    "jobs listing incomplete: gh invocation failed (HTTP 502, exit 1); gh api \"repos/PHPCraftdream/sefer-alloc/actions/runs/44415701369/attempts/1/jobs?per_page=100&page=1\""
+  ],
+  "attempt": 1,
+  "collectionCheck": "stable"
+}

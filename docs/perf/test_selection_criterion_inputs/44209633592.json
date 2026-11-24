@@ -27,22 +27,65 @@
     "rows": [
       {
         "name": "test ()",
-        "conclusion": "failure"
+        "conclusion": "failure",
+        "evidence": {
+          "status": "test-failures",
+          "failures": [
+            {
+              "kind": "integration",
+              "name": "no_panic_doc_accuracy",
+              "path": "tests/no_panic_doc_accuracy.rs"
+            },
+            {
+              "kind": "integration",
+              "name": "no_stale_doc_references",
+              "path": "tests/no_stale_doc_references.rs"
+            }
+          ]
+        }
       },
       {
         "name": "test (--features experimental)",
-        "conclusion": "failure"
+        "conclusion": "failure",
+        "evidence": {
+          "status": "test-failures",
+          "failures": [
+            {
+              "kind": "integration",
+              "name": "no_panic_doc_accuracy",
+              "path": "tests/no_panic_doc_accuracy.rs"
+            },
+            {
+              "kind": "integration",
+              "name": "no_stale_doc_references",
+              "path": "tests/no_stale_doc_references.rs"
+            }
+          ]
+        }
       },
       {
         "name": "test (--features alloc-core)",
-        "conclusion": "failure"
+        "conclusion": "failure",
+        "evidence": {
+          "status": "test-failures",
+          "failures": [
+            {
+              "kind": "integration",
+              "name": "no_panic_doc_accuracy",
+              "path": "tests/no_panic_doc_accuracy.rs"
+            },
+            {
+              "kind": "integration",
+              "name": "no_stale_doc_references",
+              "path": "tests/no_stale_doc_references.rs"
+            }
+          ]
+        }
       }
     ]
   },
   "coreLookup": "available",
-  "issues": [
-    "core log unavailable: gh invocation failed (exit 1); gh api repos/PHPCraftdream/sefer-alloc/actions/jobs/134485289235/logs"
-  ],
+  "issues": [],
   "attempt": 1,
   "collectionCheck": "stable",
   "evidenceAttempt": 1

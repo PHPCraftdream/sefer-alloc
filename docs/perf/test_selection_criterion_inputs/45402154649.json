@@ -1,0 +1,47 @@
+{
+  "id": "45402154649",
+  "createdAt": "2026-11-24T13:18:59Z",
+  "event": "push",
+  "headBranch": "main",
+  "headSha": "8456ab4df1041d6522323cd23e455fb8e06a7aa9",
+  "status": "completed",
+  "conclusion": "success",
+  "selection": {
+    "mode": "all",
+    "reason": "crate change (malloc-bench-rs, once-ptr-cell, proc-memstat, proc-probe, sefer-ghost, size-classes, tagged-index-stack) reaches the root crate",
+    "total": 499,
+    "mapShas": [
+      "784b40f90754340d09e452df55756e836345c83e",
+      "784b40f90754340d09e452df55756e836345c83e"
+    ],
+    "integrity": {
+      "sourceSha256": "f1be532e096b3fdd6fe388756d88c049ea4c1a30d7e8acd3abf194dfe201ff2f",
+      "compactSha256": "03aeba01c5d2c72865ca6f9ba5f6321a70e3f0e836ae62d0fec663bdcb925ec3",
+      "testCount": 0
+    }
+  },
+  "core": {
+    "id": "138473590302",
+    "conclusion": "success",
+    "shadow": true,
+    "rows": [
+      {
+        "name": "test ()",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (--features experimental)",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (--features alloc-core)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "coreLookup": "available",
+  "issues": [],
+  "attempt": 1,
+  "collectionCheck": "stable",
+  "evidenceAttempt": 1
+}

@@ -1,0 +1,36 @@
+{
+  "id": "45382891769",
+  "createdAt": "2026-11-24T11:17:58Z",
+  "event": "push",
+  "headBranch": "main",
+  "headSha": "e5104938902799dbb5d645067ec2b239b095729c",
+  "status": "completed",
+  "conclusion": "success",
+  "selection": null,
+  "core": {
+    "id": "138406339656",
+    "conclusion": "skipped",
+    "shadow": false,
+    "rows": [
+      {
+        "name": "test ()",
+        "conclusion": null
+      },
+      {
+        "name": "test (--features experimental)",
+        "conclusion": null
+      },
+      {
+        "name": "test (--features alloc-core)",
+        "conclusion": null
+      }
+    ]
+  },
+  "coreLookup": "available",
+  "issues": [
+    "selector job conclusion: skipped"
+  ],
+  "attempt": 1,
+  "collectionCheck": "stable",
+  "evidenceAttempt": 1
+}

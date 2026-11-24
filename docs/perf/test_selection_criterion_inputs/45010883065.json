@@ -1,0 +1,47 @@
+{
+  "id": "45010883065",
+  "createdAt": "2026-11-22T10:07:35Z",
+  "event": "pull_request",
+  "headBranch": "p196d-20261122",
+  "headSha": "116dbf982e540092854cfe4f84321731aea45e4f",
+  "status": "completed",
+  "conclusion": "success",
+  "selection": {
+    "mode": "all",
+    "reason": "tests/b4_r1_pin_cache_miri.rs is executed by no mapped test",
+    "total": 499,
+    "mapShas": [
+      "7eb12eee790121c109310743c0a33851698f989d",
+      "7eb12eee790121c109310743c0a33851698f989d"
+    ],
+    "integrity": {
+      "sourceSha256": "eb13275a8a6b7f3d0675ec19adcb84f718e31cefe6469e1287db7eaaec197aeb",
+      "compactSha256": "c1cf83c193ea9802a657adf5621c688f1a028f8729f1df33c0eb702b2c87c289",
+      "testCount": 0
+    }
+  },
+  "core": {
+    "id": "137172855851",
+    "conclusion": "success",
+    "shadow": true,
+    "rows": [
+      {
+        "name": "test ()",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (--features experimental)",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (--features alloc-core)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "coreLookup": "available",
+  "issues": [],
+  "attempt": 1,
+  "collectionCheck": "stable",
+  "evidenceAttempt": 1
+}

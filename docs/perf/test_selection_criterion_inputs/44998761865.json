@@ -1,0 +1,47 @@
+{
+  "id": "44998761865",
+  "createdAt": "2026-11-22T07:33:16Z",
+  "event": "push",
+  "headBranch": "main",
+  "headSha": "d332bba167e9c0884731877903a508805ffa862f",
+  "status": "completed",
+  "conclusion": "success",
+  "selection": {
+    "mode": "all",
+    "reason": "src/lib.rs is executed by no mapped test",
+    "total": 499,
+    "mapShas": [
+      "7eb12eee790121c109310743c0a33851698f989d",
+      "7eb12eee790121c109310743c0a33851698f989d"
+    ],
+    "integrity": {
+      "sourceSha256": "db714ab47582536288e4dff8ce322761b60b0e2bc89101336e31d9ff3519f3df",
+      "compactSha256": "bf614aac70ee0a323624e82656b54dc319173ab39ae530b7128d8d990addb119",
+      "testCount": 0
+    }
+  },
+  "core": {
+    "id": "137135539792",
+    "conclusion": "success",
+    "shadow": true,
+    "rows": [
+      {
+        "name": "test ()",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (--features experimental)",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (--features alloc-core)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "coreLookup": "available",
+  "issues": [],
+  "attempt": 1,
+  "collectionCheck": "stable",
+  "evidenceAttempt": 1
+}

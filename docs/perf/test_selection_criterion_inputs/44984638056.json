@@ -1,0 +1,16 @@
+{
+  "id": "44984638056",
+  "createdAt": "2026-11-22T04:20:47Z",
+  "event": "workflow_dispatch",
+  "headBranch": "p25-wfix-20261122",
+  "headSha": "efab1ed7c3ea77b0c1384be314f10f0014b15613",
+  "status": "completed",
+  "conclusion": "success",
+  "selection": null,
+  "core": null,
+  "coreLookup": "not-needed",
+  "issues": [
+    "excluded event or branch"
+  ],
+  "attempt": 1
+}
