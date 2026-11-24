@@ -40,6 +40,7 @@ jobs:
       crate_once_ptr_cell: ${{ steps.plan.outputs.crate_once_ptr_cell }}
       crate_proc: ${{ steps.plan.outputs.crate_proc }}
       crate_sefer_alloc_core: ${{ steps.plan.outputs.crate_sefer_alloc_core }}
+      crate_sefer_alloc_api: ${{ steps.plan.outputs.crate_sefer_alloc_api }}
       crate_sefer_registry: ${{ steps.plan.outputs.crate_sefer_registry }}
       crate_sefer_concurrent: ${{ steps.plan.outputs.crate_sefer_concurrent }}
       crate_sefer_ghost: ${{ steps.plan.outputs.crate_sefer_ghost }}
@@ -237,6 +238,20 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-sefer-alloc-core-gates
+  sefer-alloc-api-gates:
+    needs: changes
+    if: needs.changes.outputs.crate_sefer_alloc_api == 'true'
+    name: sefer-alloc-api package gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo check -p sefer-alloc-api --all-features
+      - run: cargo test -p sefer-alloc-api --all-features --no-fail-fast
+      - run: cargo clippy -p sefer-alloc-api --all-features --all-targets -- -D warnings
+      - uses: dtolnay/rust-toolchain@1.100
+      - run: cargo check -p sefer-alloc-api --all-features
+      - run: cargo test -p sefer-alloc-api --all-features --no-fail-fast
   sefer-registry-gates:
     needs: changes
     if: needs.changes.outputs.crate_sefer_registry == 'true'
@@ -609,6 +624,19 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci-no_std
+  miri-sefer-alloc-api-zst:
+    needs: changes
+    if: needs.changes.outputs.crate_sefer_alloc_api == 'true'
+    name: miri (sefer-alloc-api isolated ZST)
+    runs-on: ubuntu-latest
+    env:
+      MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - run: cargo miri test -p sefer-alloc-api --test miri_zst
   miri-core-pin-cache:
     needs: changes
     if: needs.changes.outputs.seam == 'true'

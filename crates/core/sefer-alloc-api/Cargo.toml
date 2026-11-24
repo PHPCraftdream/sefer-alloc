@@ -1,0 +1,27 @@
+[package]
+name = "sefer-alloc-api"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.100"
+license = "MIT OR Apache-2.0"
+description = "Rust Allocator API adapter for SeferAlloc"
+readme = "README.md"
+repository = "https://github.com/PHPCraftdream/sefer-alloc"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/core/sefer-alloc-api"
+documentation = "https://docs.rs/sefer-alloc-api"
+keywords = ["allocator", "memory", "allocation"]
+categories = ["memory-management"]
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = []
+panic-test = []
+
+[dependencies]
+sefer-alloc = { path = "../../..", version = "0.3", default-features = false, features = ["alloc-global"] }

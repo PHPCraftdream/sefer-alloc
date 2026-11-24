@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Rust Allocator API adapter
+
+- [build] Add the opt-in `sefer-alloc-api` workspace package, which provides a Rust 1.100 `Allocator` adapter backed by `sefer-alloc`; the root crate MSRV and `production` feature bundle are unchanged.
+- [CI] Add stable and Rust 1.100 package checks plus an isolated `miri_zst` target; planner/group mapping selects these gates for adapter changes.
+- [docs] Document the adapter's non-unwind callback boundary, zero-sized allocation behavior, unsafe audit inventory, and contract coverage.
+
+
 ### Allocator workspace split and verification tooling (2026-11-21)
 
 - [build] Split segment metadata and routing into `sefer-segment`, the Small and Large paths and `AllocCore` into

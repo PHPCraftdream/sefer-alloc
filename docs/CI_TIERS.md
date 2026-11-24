@@ -381,6 +381,8 @@ the smoke row covers those scenarios.
 | `once-ptr-cell-miri` | once-ptr-cell under miri (interpreter, strict-provenance included) | `crate_once_ptr_cell`: changes under its crate |
 | `proc-memstat-gates` | proc-memstat gates (${{ matrix.os }}) | `crate_proc`: changes under its crate |
 | `proc-probe-gates` | proc-probe gates | `crate_proc`: changes under its crate |
+| `miri-sefer-alloc-api-zst` | miri (sefer-alloc-api isolated ZST) | `crate_sefer_alloc_api`: changes under its crate |
+| `sefer-alloc-api-gates` | sefer-alloc-api package gates | `crate_sefer_alloc_api`: changes under its crate |
 | `sefer-alloc-core-gates` | sefer-alloc-core package gates | `crate_sefer_alloc_core`: changes under its crate |
 | `sefer-concurrent-gates` | sefer-concurrent-gates | `crate_sefer_concurrent`: changes under its crate |
 | `sefer-ghost-gates` | sefer-ghost package gates | `crate_sefer_ghost`: changes under its crate |
