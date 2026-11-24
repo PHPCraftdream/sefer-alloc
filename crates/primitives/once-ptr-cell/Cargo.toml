@@ -12,6 +12,9 @@ documentation = "https://docs.rs/once-ptr-cell"
 keywords = ["oncelock", "spin", "allocator", "cas", "no-std"]
 categories = ["memory-management", "concurrency", "no-std::no-alloc"]
 
+[package.metadata.docs.rs]
+features = []
+
 [lints]
 # `loom` / `kani` cfg declarations are shared at the workspace root
 # (`[workspace.lints.rust]`); `kani` is root-only and harmlessly unused here.

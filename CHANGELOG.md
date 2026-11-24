@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [docs] The [Phase 2 manifest](docs/perf/round-manifests/P2_MANIFEST.md) records the workspace split, feature forwarding
   and verification limits. The landed Phase 2 baseline extends through `origin/main` `bf636478`, including adjacent
   `sefer-segment` scanner coverage (#284).
+- [docs] Declare docs.rs feature sets for the seven publishable leaf crates, excluding internal and test-only features.
 - [CI] The P2.5 close-out (#187) ships in a PR carrying `CI: full`. Acceptance requires green full CI on the exact
   landing SHA (`node scripts/verify-sprint-close.mjs <sha>`) and a separate scheduled or dispatched run of
   `feature-powerset`. Neither result is claimed here.

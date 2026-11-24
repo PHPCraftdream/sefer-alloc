@@ -12,6 +12,9 @@ documentation = "https://docs.rs/size-classes"
 keywords = ["allocator", "size-class", "slab", "alignment", "no-std"]
 categories = ["memory-management", "data-structures", "no-std::no-alloc"]
 
+[package.metadata.docs.rs]
+features = []
+
 [lints]
 # Inherit [workspace.lints.rust]: a future workspace-wide lint tightening
 # reaches this crate automatically instead of silently excluding it.
