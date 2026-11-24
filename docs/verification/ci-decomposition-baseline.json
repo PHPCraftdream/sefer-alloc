@@ -4,7 +4,7 @@
   "jobs": [
     {
       "id": "changes",
-      "metadata": "31e9b80a3937cb935fc5e63cb42c104438234eed714d55bb1fbaf3331d056490",
+      "metadata": "b4aa7075160e4ee16635d73596ad343939280b7b7f52123a96f98ab5c4f7da60",
       "steps": "1fe5589733f5bb700e49ab25de242b1626e691fd2ba507f210c3cd9d48c9cbd6"
     },
     {
@@ -51,6 +51,11 @@
       "id": "sefer-alloc-core-gates",
       "metadata": "2295c771e061ec7a47b2f7cafe399726102e3cece3fe9e1f0fd4d9df6db1668c",
       "steps": "78296e0449131382579f48cfbb9969225f7146dc84c6b1d689d08213978060dc"
+    },
+    {
+      "id": "sefer-alloc-api-gates",
+      "metadata": "6172c9cd7c4143ddcf8411fcc6482328144572083486c3811ead2aec236cc1d1",
+      "steps": "eff262ca6f2d915271bb36c8df63ae1822419978feff3f7b0a03fa913c1dd146"
     },
     {
       "id": "sefer-registry-gates",
@@ -211,6 +216,11 @@
       "id": "no_std",
       "metadata": "19d8b96268b75430d9110f9edb3f7d55342621700f4e62d4597134785ae4110f",
       "steps": "b5cf1d06f4a2deab288789e014769d6a4c3f0b3fe0760b5d25336c0370d6ceaa"
+    },
+    {
+      "id": "miri-sefer-alloc-api-zst",
+      "metadata": "5ec369524f8245fed0de1f1798a003b73b098ec0119b60213ce5ace27a06dfe8",
+      "steps": "22322b8955c13a8c7c781b7aa96c4122cf92e50769976c0cea82145336795090"
     },
     {
       "id": "miri-core-pin-cache",

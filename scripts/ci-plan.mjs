@@ -36,6 +36,7 @@ export const CRATE_GROUPS = {
   'once-ptr-cell': 'crate_once_ptr_cell',
   'proc-memstat': 'crate_proc',
   'proc-probe': 'crate_proc',
+  'sefer-alloc-api': 'crate_sefer_alloc_api',
   'sefer-alloc-core': 'crate_sefer_alloc_core',
   'sefer-concurrent': 'crate_sefer_concurrent',
   'sefer-ghost': 'crate_sefer_ghost',
@@ -360,7 +361,9 @@ function selftest() {
   eq(on(P(['crates/platform/sefer-platform/src/os.rs'])), 'always,crate_sefer_platform,fast,os,seam', 'sefer-platform crate');
   eq(on(P(['crates/platform/proc-probe/src/lib.rs', 'crates/platform/proc-memstat/src/lib.rs'])), 'always,crate_proc,fast,os,seam', 'proc');
   eq(on(P(['crates/core/sefer-segment/src/lib.rs'])), 'always,crate_sefer_segment,fast,seam', 'sefer-segment crate');
-  eq(on(P(['crates/core/sefer-alloc-core/src/lib.rs'])), 'always,crate_sefer_alloc_core,fast,seam', 'crate');
+  eq(on(P(['crates/core/sefer-alloc-core/src/lib.rs'])), 'always,crate_sefer_alloc_core,fast,seam', 'sefer-alloc-core crate');
+  eq(on(P(['crates/core/sefer-alloc-api/src/lib.rs'])), 'always,crate_sefer_alloc_api,fast,seam', 'sefer-alloc-api crate');
+
   eq(on(P(['crates/brand-new/src/lib.rs'])), 'always,fast,seam', 'unknown crate is conservative');
   // scripts: matrix/manifest scripts feed fast/seam; other scripts are `always`.
   eq(on(P(['scripts/check-matrix.mjs'])), 'always,fast', 'check-matrix');

@@ -103,11 +103,12 @@ features = ["production"]
 #   - sefer-ghost     (crates/primitives/sefer-ghost)   — checking-build-only ghost_assert!/ghost_event!
 #                                             macros + shadow event table; #![forbid(unsafe_code)],
 #                                             no_std. sefer-alloc re-exports it as `sefer_alloc::ghost`.
-# Each is a real crates.io crate someone can `cargo add` on its own; sefer-alloc
+#   - sefer-alloc-api (crates/core/sefer-alloc-api) — unpublished helper package (Rust 1.100 Allocator API; no root feature forwarding)
+# The workspace has 17 published companion crates plus this unpublished helper and repository-only ghost-lint; sefer-alloc
 # re-exports sefer-region's surface for backward compatibility, and delegates its
 # OS-unsafe seams to aligned-vmem and numa-shim (thin interop wrappers).
 [workspace]
-members = ["crates/platform/aligned-vmem", "crates/platform/numa-shim", "crates/bench/malloc-bench-rs", "crates/containers/sefer-region", "crates/core/sefer-policy", "crates/core/sefer-segment", "crates/core/sefer-alloc-core", "crates/core/sefer-registry", "crates/primitives/once-ptr-cell", "crates/primitives/sefer-ghost", "crates/primitives/size-classes", "crates/verify/globalalloc-model", "crates/primitives/tagged-index-stack", "crates/platform/proc-memstat", "crates/platform/proc-probe", "crates/platform/sefer-platform", "crates/verify/ghost-lint", "crates/containers/sefer-concurrent"]
+members = ["crates/platform/aligned-vmem", "crates/platform/numa-shim", "crates/bench/malloc-bench-rs", "crates/containers/sefer-region", "crates/core/sefer-policy", "crates/core/sefer-segment", "crates/core/sefer-alloc-core", "crates/core/sefer-registry", "crates/primitives/once-ptr-cell", "crates/primitives/sefer-ghost", "crates/primitives/size-classes", "crates/verify/globalalloc-model", "crates/primitives/tagged-index-stack", "crates/platform/proc-memstat", "crates/platform/proc-probe", "crates/platform/sefer-platform", "crates/verify/ghost-lint", "crates/containers/sefer-concurrent", "crates/core/sefer-alloc-api"]
 resolver = "2"
 
 # Task #711 (once-ptr-cell round-closing review, §C10 drift hazard): `loom`

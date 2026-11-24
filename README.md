@@ -708,14 +708,13 @@ The deliberate inversion: all the intelligence lives in the safe Cartographer,
 so the Hand stays mechanical and small. Verification is over a total Membrane
 and an integer algorithm, not a tangle of pointer math.
 
-### Workspace: seventeen independently-publishable companion crates
+### Workspace: 20 members (root + 19 companions)
 
-The workspace has eighteen companion members: seventeen publishable crates and the
-repository-only `ghost-lint` tool. The allocator and its companion libraries
-are laid out as follows:
+There are 20 workspace members total: the root `sefer-alloc` package plus 19 companions—17 published crates, the unpublished `sefer-alloc-api` helper, and repository-only `ghost-lint`.
 
 ```
 sefer-alloc
+ ├── sefer-alloc-api   (crates/core/sefer-alloc-api)             — unpublished Rust 1.100 `Allocator` helper
  ├── sefer-policy       (crates/core/sefer-policy)                   — allocator POLICY layer (config types, Large-THP policy runtime) (feature: alloc-core)
  ├── sefer-alloc-core   (crates/core/sefer-alloc-core)       — the extracted AllocCore segment substrate (P2.2: former `src/alloc_core` tree) (feature: alloc-core)
  ├── sefer-registry     (crates/core/sefer-registry)             — heap registry, leases, cross-thread routing and primordial fallback (P2.3; feature: alloc-global)
@@ -735,9 +734,7 @@ sefer-alloc
  └── proc-probe         (crates/platform/proc-probe)         — RESULT key=value stdout protocol     (standalone, dev-only)
 ```
 
-`malloc-bench-rs`, `globalalloc-model`, `proc-memstat`, and `proc-probe` are
-not in sefer-alloc's runtime dependency tree — they are dev-only / example
-infra. Runtime and opt-in dependencies are pulled in under the feature gates noted above (`alloc-core`, `alloc-global`,
+`sefer-alloc-api` is standalone and does not contribute to the root runtime feature graph. `malloc-bench-rs`, `globalalloc-model`, `proc-memstat`, and `proc-probe` are not in sefer-alloc's runtime dependency tree — they are dev-only / example infra. Runtime and opt-in dependencies are pulled in under the feature gates noted above (`alloc-core`, `alloc-global`,
 `numa-aware`), `sefer-concurrent` under `experimental`/`pinning`, and
 `sefer-region` plus `sefer-ghost` unconditionally (`sefer-ghost` compiles to no
 code in production builds). `tagged-index-stack` is verification-only (not a
@@ -757,6 +754,7 @@ Per-crate status:
 
 | crate | crates.io | docs.rs |
 |---|---|---|
+| `sefer-alloc-api` | Not yet published (opt-in adapter package) | Not published |
 | `sefer-policy` | [![Crates.io](https://img.shields.io/crates/v/sefer-policy.svg)](https://crates.io/crates/sefer-policy) | [![Documentation](https://docs.rs/sefer-policy/badge.svg)](https://docs.rs/sefer-policy) |
 | `sefer-region` | [![Crates.io](https://img.shields.io/crates/v/sefer-region.svg)](https://crates.io/crates/sefer-region) | [![Documentation](https://docs.rs/sefer-region/badge.svg)](https://docs.rs/sefer-region) |
 | `sefer-concurrent` | [![Crates.io](https://img.shields.io/crates/v/sefer-concurrent.svg)](https://crates.io/crates/sefer-concurrent) | [![Documentation](https://docs.rs/sefer-concurrent/badge.svg)](https://docs.rs/sefer-concurrent) |
@@ -834,6 +832,9 @@ safe protocol and re-export layer over `proc-memstat`.
 
 | File | Sites | Audit notes |
 |---|---:|---|
+| [`crates/core/sefer-alloc-api/src/lib.rs`](crates/core/sefer-alloc-api/src/lib.rs) | 8 | `GlobalAlloc` callback function pointer and non-unwind trampoline; `Allocator` implementation for SeferAlloc. Each raw pointer dereference/call and resize copy carries a local `// SAFETY:` proof. |
+| [`crates/core/sefer-alloc-api/tests/contract.rs`](crates/core/sefer-alloc-api/tests/contract.rs) | 5 | Contract integration tests: direct byte access/deallocation and observing allocated buffers. |
+| [`crates/core/sefer-alloc-api/tests/miri_zst.rs`](crates/core/sefer-alloc-api/tests/miri_zst.rs) | 1 | Isolated zero-sized layout/no-op deallocation Miri test. |
 | [`src/global/sefer_alloc/diag.rs`](src/global/sefer_alloc/diag.rs) | 12 | Exclusive current-heap trim and diagnostic delegation sites. |
 | [`src/global/tls_heap.rs`](src/global/tls_heap.rs) | 1 | `dbg_restore_local_for_test` (R29-7/task #438, gated `bench-internals`) — `unsafe fn` boundary: installs a caller-supplied raw pointer as THIS thread's live TLS `LOCAL` binding; the single-writer contract lives in its `# Safety` doc. R6-T37 moved the file out of tier 1. |
 | [`crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs`](crates/core/sefer-alloc-core/src/alloc_core/alloc_core/alloc_core_core_diag/directory_diag.rs) | 2 | `dbg_rebuild_directory` — internal call-site block into `sidecar::deref_mut` (R14-9, task #294) |

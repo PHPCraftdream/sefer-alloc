@@ -1,6 +1,6 @@
 # Дизайн-предложение: реализация `std::alloc::Allocator` для SeferAlloc
 
-> **Статус:** проектное предложение, фаза 1; реализация не включена. Единственное изменение этой фазы — данный документ. Все локальные пути ниже относительные к корню репозитория; абсолютные/машинные пути не используются.
+> **Статус:** проектная рекомендация и исходная proposal, фаза 1; фаза 2 реализована в отдельном opt-in helper crate `crates/core/sefer-alloc-api`. Proposal ниже сохраняет исходные решения и provenance; актуальные детали реализации и её проверок ведутся в §7.4. Все локальные пути ниже относительные к корню репозитория; абсолютные/машинные пути не используются.
 >
 > **Дата:** 2026-11-24. **Область:** стабилизированный API `Allocator` Rust 1.100.0 и его возможная интеграция с существующим аллокатором SeferAlloc. Это не gate-отчёт и не утверждение о производительности.
 
@@ -171,6 +171,19 @@ Proposed mapping:
 - Reused memory должна быть zeroed даже при virgin-zero-skip; расширение не может раскрыть старые bytes.
 - Не включать adapter в `production`, не менять существующий GlobalAlloc код, не поднимать версии crate/deps, не расширять API нестабильными `allocator_api` extensions.
 - Не заявлять win по скорости/памяти; performance gate, ghost instrumentation и новые dbg hooks не являются целью этой фазы.
+
+### 7.4. Реализация (Task #128, phase 2)
+
+Реализация находится в отдельном `sefer-alloc-api` helper package, с `rust-version = 1.100`; root остаётся на MSRV 1.93. Helper не входит в root `production` feature list. Его `SeferAllocator` — отдельный не-Clone handle поверх route-capable `SeferAlloc`; не добавлялись поля в root allocator и не редактировался `src/global/sefer_alloc/global_alloc.rs`.
+
+Все nonzero backend callbacks выполняются синхронно через приватный `unsafe extern "C"` trampoline с stack-local borrowed call record. Rust non-unwinding ABI aborts if unwind reaches the boundary; when a callback panics, the panic hook runs before unwind reaches `extern "C"` and the boundary aborts. The hook's payload/re-entry risk is grounded in `src/global/sefer_alloc/mod.rs:154-157` (panic hook and payload re-entry). OOM/internals may also be unrecoverable; `AllocError` does not promise recoverable OOM. Contract tests не инжектируют детерминированный отказ: нет публичного deterministic failure control, поэтому поведение allocate-before-free гарантирует, что исходный блок не освобождается до успешной замены, но конкретный отказный путь не проверен.
+
+Zero-size allocate и resize-to-zero возвращают aligned dangling pointer; deallocation zero-size не вызывает backend. Resize выделяет replacement до освобождения старого блока, копирует `min(old.size(), new.size())`, для grow-zeroed очищает нужный добавочный хвост. Contract coverage включает alignment/ZST/collections, изменение alignment при grow/shrink, reused zeroed storage и child-process cross-thread reclamation; отдельный ZST target предназначен для Miri. Linux-only panic subprocess gate requires SIGABRT (Linux ABI signal 6), отсутствия exit code, non-unwinding runtime diagnostic и callback probe text. When the callback panics, the hook runs before unwind reaches the C ABI boundary, which aborts; hook/payload re-entry is covered at `src/global/sefer_alloc/mod.rs:154-157`. При регрессии trampoline на Rust ABI panic callback unwind-ится вместо требуемого SIGABRT/diagnostic; родительский тест падает, так что обычный unwind-результат не может пройти.
+
+Helper остаётся workspace member: аудит фактических команд в `.github/workflows/ci.yml`, `.github/actions/**`, `scripts/check-all.mjs` и `scripts/check-matrix.mjs` не выявил прямых build/test команд с `--workspace`. Именованные Cargo build/check/test команды без `-p` выбирают root default package; jobs для member явно задают `-p`. `cargo fmt --all` охватывает workspace members, но не выбирает compiler MSRV. Следовательно, ни одна проверенная CI-задача не builds/resolves helper ниже 1.100. Это намеренное ограничение workspace-subcommand, а не гарантия all-member MSRV; ни одна CI-задача не использует `--workspace`. Helper остаётся member без отдельного lockfile/workflow. Наблюдавшийся `cargo check --workspace` с default 1.97 завершается ошибкой как MSRV audit, а не CI invocation.
+
+
+Эта текущая implementation note не заменяет proposal: первоначальная рекомендация и provenance источников выше остаются source of truth для design rationale.
 
 ## 8. Официальные источники
 

@@ -30,6 +30,7 @@ const depot = (borrows) => green('miri-core-rest', 'miri_depot_cycle', 'alloc-gl
 });
 const plainFeatures = 'alloc-global alloc-xthread alloc-decommit internals bench-internals';
 export const MIRI_TARGETS = [
+  green('miri-sefer-alloc-api-zst', 'miri_zst', '', { pkg: 'sefer-alloc-api' }),
   green('miri-core-rest', 'region_invariants'),
   green('miri-core-rest', 'advice_event_stream', 'bench-internals fault-injection', {
     pkg: 'aligned-vmem',
