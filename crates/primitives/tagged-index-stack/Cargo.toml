@@ -14,12 +14,16 @@ homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/primit
 documentation = "https://docs.rs/tagged-index-stack"
 keywords = ["lock-free", "aba", "free-list", "slab", "no-std"]
 categories = ["concurrency", "data-structures", "no-std::no-alloc"]
+
 # These repository-only fixture crates and measurement scripts do not belong
 # in the published .crate; the root integration tests own the drivers.
 exclude = [
     "tests/compile_fail/",
     "scripts/",
 ]
+
+[package.metadata.docs.rs]
+features = []
 
 # Crate-local `unexpected_cfgs` declaration, deliberately NOT the
 # workspace-inherited table (`[lints] workspace = true`): the workspace

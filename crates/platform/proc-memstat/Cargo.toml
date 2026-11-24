@@ -12,6 +12,9 @@ documentation = "https://docs.rs/proc-memstat"
 keywords = ["rss", "memory", "commit-charge", "process", "peak-rss"]
 categories = ["os", "memory-management", "development-tools::profiling"]
 
+[package.metadata.docs.rs]
+features = []
+
 [dependencies]
 
 # Review round 2, P2-1: the native lifecycle scenario is a `harness = false`

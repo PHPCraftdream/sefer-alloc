@@ -12,6 +12,9 @@ documentation = "https://docs.rs/malloc-bench-rs"
 keywords = ["benchmark", "allocator", "globalalloc", "larson", "mstress"]
 categories = ["development-tools::profiling", "memory-management"]
 
+[package.metadata.docs.rs]
+features = []
+
 [dependencies]
 # Zero non-std deps (PRNG is xorshift internal).
 

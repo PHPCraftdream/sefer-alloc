@@ -214,12 +214,15 @@ production ranges require exact normalized `.text` and Ir identity; only qualify
 the symmetric 0.1% Ir bound and head-only production ghost-token check. Probe qualification is not a substitute for the
 mandatory gate; no waiver or local gate execution is claimed.
 
-One EV-1 reverify round is requested in this PR for eight rows: R4a-03, R4b-01, R6a-A10, R6a-E1, R6a-E2, R6a-E3,
+Historical EV-1 reverify request in this PR was for eight rows: R4a-03, R4b-01, R6a-A10, R6a-E1, R6a-E2, R6a-E3,
 R6a-EX2 and R6a-EX4 (six rows cover the crate directory, R6a-EX2 covers the source directory and R6a-EX4 covers
-`alloc_core/platform` — path scopes
-distinct from the documentation paths touched here). Receipts will be reported under `ci(evidence)`; no r20 status or
-outcome claims. This EV-1 round does NOT include the remaining #288 items — (a) the root evidence mirror, (b) the
-seven manifest evidence blocks, and (c) the loom #286 reverify — which are left for #211; all original
-historical evidence, table/range/raw statistics in this manifest are preserved unchanged.
+`alloc_core/platform` — path scopes distinct from the documentation paths touched here). Receipts were to be reported
+under `ci(evidence)`; no r20 status or outcome claims. That historical sidecar request is distinct from the current task,
+which separately requests the affected manifest rows via `.github/evidence-reverify.json`. For #288, commit `35f531d3`
+landed the eight (a) source-scope receipts and the distinct R0-22 witness receipt (source_sha `75786d64...`, refreshed
+receipt hash; the commit body identifies it). The only EV-1 receipts requested for this change are the seven (b) manifest
+rows: R4a-03, R4b-01, R6a-E1, R6a-A10, R6a-E2, R6a-E3 and R6a-EX4; close or disposition item 288 after those receipts.
+All original historical evidence, table/range/raw statistics in this manifest are preserved
+unchanged.
 
 Local checks: `node scripts/ci-plan.mjs --selftest` (110 checks, PASS), `node scripts/verify-structure-limits.mjs` (21 self-test cases; 4 grandfathered directories, 28 files, none new or grown), and `node --test tests/ghost_extraction_policy.test.mjs tests/ghost_probe_stability_report.test.mjs tests/classify_ignored_paths.test.mjs tests/crate_graph.test.mjs` (35 passed, 0 failed). No results from Rust runtime tests, live Kani/Miri/Loom, performance jobs, or full CI are claimed here.

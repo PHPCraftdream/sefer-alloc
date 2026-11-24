@@ -12,6 +12,9 @@ documentation = "https://docs.rs/proc-probe"
 keywords = ["benchmark", "process", "memory", "rss", "probe"]
 categories = ["development-tools::profiling", "os", "memory-management"]
 
+[package.metadata.docs.rs]
+features = ["std"]
+
 [features]
 # The `emit*` functions write to stdout, which needs `std`, and the
 # `proc-memstat` re-export is itself an std-only crate — so both are gated on

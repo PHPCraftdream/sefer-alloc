@@ -12,6 +12,9 @@ documentation = "https://docs.rs/sefer-ghost"
 keywords = ["allocator", "model-checking", "loom", "miri", "no-std"]
 categories = ["development-tools::testing", "concurrency", "no-std"]
 
+[package.metadata.docs.rs]
+features = []
+
 [lints]
 # `loom` / `kani` / `sefer_ghost` cfg declarations are shared at the
 # workspace root ([workspace.lints.rust]); inherit them so

@@ -197,8 +197,7 @@ The `fast`-tier `docs` job treats rustdoc warnings as errors. It keeps the root'
 stable all-features row and its separate manifest feature-list row (`production`,
 with defaults). The workspace composite checks every other member on stable with
 all features, then checks the exact docs.rs configuration where already declared:
-`all-features`, or the listed `features` with defaults unless `no-default-features` opts out.
-The action runs nightly `cargo doc` with declared `rustdoc-args` (e.g. `--cfg docsrs`)
+`all-features`, or the listed `features` with defaults unless `no-default-features` opts out. The action runs nightly `cargo doc` with declared `rustdoc-args` (e.g. `--cfg docsrs`)
 passed via `CARGO_ENCODED_RUSTDOCFLAGS` alongside `-D warnings`; without declared
 args the row uses stable `cargo doc`. For already-declared configurations, the
 docs.rs row is skipped only when the manifest declares `all-features = true`
@@ -206,10 +205,12 @@ without rustdoc arguments. The dedicated `globalalloc-model` workflow also
 reads its exact docs.rs features and rustdoc args from metadata and retains its
 separate internal all-features row. These rows catch warnings specific to the
 published feature set that an all-features build need not expose. Members without
-`[package.metadata.docs.rs]` get only the all-features row from the workspace action;
-adding declarations to EV-1-scoped manifests is deferred pending EV-1 reverify
-(item 288 of `docs/CORRECTNESS_OPEN_ITEMS.md`). First finding of the new rows
-(PR #285): the workspace all-features rustdoc row flagged a broken
+`[package.metadata.docs.rs]` get only the all-features row from the workspace action.
+The seven EV-1-scoped manifest declarations are now discovered by that same
+metadata-driven action; no workflow or composite-action change is needed. Their
+docs.rs feature sets are `[]` for `malloc-bench-rs`, `once-ptr-cell`,
+`proc-memstat`, `sefer-ghost`, `size-classes`, and `tagged-index-stack`, and
+`[std]` for `proc-probe`. The workspace composite runs the metadata docs.rs row for each declaration in addition to its all-features row, unless the declaration has `all-features = true` with no rustdoc arguments. This generic behavior includes all seven declarations: CI runs all seven docs.rs rows, and no manually hard-coded CI rows or workflow/action edits are needed. Feature-set equality with `--all-features` is: `malloc-bench-rs` `[]`, `once-ptr-cell` `[]`, `proc-memstat` `[]`, `size-classes` `[]`, and `proc-probe` `[std]` (with default `std`). These feature activations are equivalent to `--all-features`, but their docs.rs rows still run. `sefer-ghost` differs between docs `[]` and all `[internals]`; `tagged-index-stack` differs between docs `[]` and all `[loom]` because of its implicit optional-dependency feature. Semantic equivalence does not omit a row or prevent it from being separately run. These are generated metadata rows, not new workflow or action wiring. The first finding of the new rows (PR #285): the workspace all-features rustdoc row flagged a broken
 self intra-doc link, in
 `crates/core/sefer-alloc-core/src/alloc_core/platform/sidecar.rs`, repaired by
 a single doc-comment line. That evidence-scoped source edit makes the close-out
