@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The root `sefer-alloc` crate remains the facade: it owns global allocator integration and forwards features and
   re-exports to the implementation crates. The root `production` bundle still lists the same six features; those
   features now select and configure the extracted crates. This is not a blanket API-equivalence or speedup claim.
+- [docs] Closed the J13b measurement-system backlog by owner decision, as record and not GO; Auto remains opt-in.
 - [CI] Run the moved Kani harnesses in `sefer-segment` and `sefer-registry`, alongside the existing `sefer-concurrent`
   proofs. CI job and test selection use declared workspace dependencies and cross-crate source includes; unknown
   dependencies fall back conservatively. The enforcement criterion is tooling, not an announcement that selection is enforced.
