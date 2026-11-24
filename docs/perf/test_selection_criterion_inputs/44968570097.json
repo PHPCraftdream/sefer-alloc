@@ -1,0 +1,47 @@
+{
+  "id": "44968570097",
+  "createdAt": "2026-11-22T00:50:24Z",
+  "event": "pull_request",
+  "headBranch": "p25-close-20261121",
+  "headSha": "9af1e548a7957fb593bed36884bd3e90471b5add",
+  "status": "completed",
+  "conclusion": "success",
+  "selection": {
+    "mode": "all",
+    "reason": "full run requested",
+    "total": 499,
+    "mapShas": [
+      "7eb12eee790121c109310743c0a33851698f989d",
+      "7eb12eee790121c109310743c0a33851698f989d"
+    ],
+    "integrity": {
+      "sourceSha256": "e0c0064fb162126bdbe1395a2035b4495910ab569c269152c27c87b675765ba8",
+      "compactSha256": "a05f63912b7bd80fc29203a36b09d4b8a24de2a50a3fb4bd11a84dc30f3b9e64",
+      "testCount": 0
+    }
+  },
+  "core": {
+    "id": "137043436577",
+    "conclusion": "success",
+    "shadow": true,
+    "rows": [
+      {
+        "name": "test ()",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (--features experimental)",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (--features alloc-core)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "coreLookup": "available",
+  "issues": [],
+  "attempt": 1,
+  "collectionCheck": "stable",
+  "evidenceAttempt": 1
+}

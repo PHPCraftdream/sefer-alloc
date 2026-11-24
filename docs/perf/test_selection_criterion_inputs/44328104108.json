@@ -1,0 +1,16 @@
+{
+  "id": "44328104108",
+  "createdAt": "2026-11-18T14:47:13Z",
+  "event": "pull_request",
+  "headBranch": "p21-sefer-segment-c-20261118",
+  "headSha": "4d751707a64b1be7f2647140e817dfc9007c5605",
+  "status": "completed",
+  "conclusion": "cancelled",
+  "selection": null,
+  "core": null,
+  "coreLookup": "not-needed",
+  "issues": [
+    "run conclusion is not success or failure: cancelled"
+  ],
+  "attempt": 1
+}

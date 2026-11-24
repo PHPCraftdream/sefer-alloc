@@ -1,0 +1,16 @@
+{
+  "id": "44936040180",
+  "createdAt": "2026-11-21T18:31:59Z",
+  "event": "pull_request",
+  "headBranch": "p24-facade-20261121",
+  "headSha": "37f5a6c8e3ef2f936370127fd549d1230ff94e5b",
+  "status": "completed",
+  "conclusion": "cancelled",
+  "selection": null,
+  "core": null,
+  "coreLookup": "not-needed",
+  "issues": [
+    "run conclusion is not success or failure: cancelled"
+  ],
+  "attempt": 1
+}

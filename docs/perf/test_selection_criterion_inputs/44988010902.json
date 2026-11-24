@@ -1,0 +1,47 @@
+{
+  "id": "44988010902",
+  "createdAt": "2026-11-22T05:07:22Z",
+  "event": "push",
+  "headBranch": "main",
+  "headSha": "86797c92658e2174698288464b22100179a9ec19",
+  "status": "completed",
+  "conclusion": "success",
+  "selection": {
+    "mode": "all",
+    "reason": "fuzz/README.md is not attributable to a test",
+    "total": 499,
+    "mapShas": [
+      "7eb12eee790121c109310743c0a33851698f989d",
+      "7eb12eee790121c109310743c0a33851698f989d"
+    ],
+    "integrity": {
+      "sourceSha256": "5f3299449cb47f34146cf863ef8ddeb273677e9502f461f85e6a892e821785cf",
+      "compactSha256": "1641270ecc150cd9d9736e61bbdc874ccd95284086bf4b22632dd1f05df41080",
+      "testCount": 0
+    }
+  },
+  "core": {
+    "id": "137102876338",
+    "conclusion": "success",
+    "shadow": true,
+    "rows": [
+      {
+        "name": "test ()",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (--features experimental)",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (--features alloc-core)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "coreLookup": "available",
+  "issues": [],
+  "attempt": 1,
+  "collectionCheck": "stable",
+  "evidenceAttempt": 1
+}

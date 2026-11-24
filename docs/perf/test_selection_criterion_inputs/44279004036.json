@@ -1,0 +1,18 @@
+{
+  "id": "44279004036",
+  "createdAt": "2026-11-18T09:46:03Z",
+  "event": "pull_request",
+  "headBranch": "p15c-enforce-criterion-20261118",
+  "headSha": "4a84153eeb446e975df4371366a7164d14a3dd25",
+  "status": "completed",
+  "conclusion": "success",
+  "selection": null,
+  "core": null,
+  "coreLookup": "unavailable",
+  "issues": [
+    "jobs listing incomplete: gh call budget exhausted; gh api \"repos/PHPCraftdream/sefer-alloc/actions/runs/44279004036/attempts/1/jobs?per_page=100&page=1\"",
+    "run verification failed: gh call budget exhausted; gh api repos/PHPCraftdream/sefer-alloc/actions/runs/44279004036"
+  ],
+  "attempt": 1,
+  "collectionCheck": "unstable"
+}

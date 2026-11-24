@@ -1,0 +1,107 @@
+{
+  "id": "44425237119",
+  "createdAt": "2026-11-18T23:58:49Z",
+  "event": "pull_request",
+  "headBranch": "p22-alloc-core-20261118",
+  "headSha": "c7785de7194b5a98db4e36e311806d85b215835d",
+  "status": "completed",
+  "conclusion": "failure",
+  "selection": {
+    "mode": "all",
+    "reason": "full run requested",
+    "total": 499,
+    "mapShas": [
+      "29fbbda1118c7842a1b15a6269c3d9246eed94c8",
+      "29fbbda1118c7842a1b15a6269c3d9246eed94c8"
+    ],
+    "integrity": {
+      "sourceSha256": "82c2419a624a4c1025ce7d2c5ea8864d9d317e9d658c381046bf77913dc49042",
+      "compactSha256": "d422fb509fafa7d43dde16e8c0d7ff6cca2d2c8ae521d1a95033cbd5881d26d2",
+      "testCount": 0
+    }
+  },
+  "core": {
+    "id": "135240463420",
+    "conclusion": "failure",
+    "shadow": true,
+    "rows": [
+      {
+        "name": "test ()",
+        "conclusion": "failure",
+        "evidence": {
+          "status": "test-failures",
+          "failures": [
+            {
+              "kind": "integration",
+              "name": "no_stale_doc_references",
+              "path": "tests/no_stale_doc_references.rs"
+            },
+            {
+              "kind": "integration",
+              "name": "regression_r6_t38_public_tail_private",
+              "path": "tests/regression_r6_t38_public_tail_private.rs"
+            },
+            {
+              "kind": "integration",
+              "name": "src_file_size_cap",
+              "path": "tests/src_file_size_cap.rs"
+            }
+          ]
+        }
+      },
+      {
+        "name": "test (--features experimental)",
+        "conclusion": "failure",
+        "evidence": {
+          "status": "test-failures",
+          "failures": [
+            {
+              "kind": "integration",
+              "name": "no_stale_doc_references",
+              "path": "tests/no_stale_doc_references.rs"
+            },
+            {
+              "kind": "integration",
+              "name": "regression_r6_t38_public_tail_private",
+              "path": "tests/regression_r6_t38_public_tail_private.rs"
+            },
+            {
+              "kind": "integration",
+              "name": "src_file_size_cap",
+              "path": "tests/src_file_size_cap.rs"
+            }
+          ]
+        }
+      },
+      {
+        "name": "test (--features alloc-core)",
+        "conclusion": "failure",
+        "evidence": {
+          "status": "test-failures",
+          "failures": [
+            {
+              "kind": "integration",
+              "name": "no_stale_doc_references",
+              "path": "tests/no_stale_doc_references.rs"
+            },
+            {
+              "kind": "integration",
+              "name": "regression_r6_t38_public_tail_private",
+              "path": "tests/regression_r6_t38_public_tail_private.rs"
+            },
+            {
+              "kind": "integration",
+              "name": "src_file_size_cap",
+              "path": "tests/src_file_size_cap.rs"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "coreLookup": "available",
+  "issues": [],
+  "attempt": 1,
+  "collectionCheck": "stable",
+  "evidenceAttempt": 1
+}

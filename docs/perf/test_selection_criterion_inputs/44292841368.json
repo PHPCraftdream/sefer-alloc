@@ -1,0 +1,16 @@
+{
+  "id": "44292841368",
+  "createdAt": "2026-11-18T11:14:17Z",
+  "event": "schedule",
+  "headBranch": "main",
+  "headSha": "29fbbda1118c7842a1b15a6269c3d9246eed94c8",
+  "status": "completed",
+  "conclusion": "success",
+  "selection": null,
+  "core": null,
+  "coreLookup": "not-needed",
+  "issues": [
+    "excluded event or branch"
+  ],
+  "attempt": 1
+}
