@@ -1,0 +1,16 @@
+{
+  "id": "44980151837",
+  "createdAt": "2026-11-22T03:20:13Z",
+  "event": "workflow_dispatch",
+  "headBranch": "main",
+  "headSha": "39e59d2afe535a4132bcaddc612953d68366ab4c",
+  "status": "completed",
+  "conclusion": "failure",
+  "selection": null,
+  "core": null,
+  "coreLookup": "not-needed",
+  "issues": [
+    "excluded event or branch"
+  ],
+  "attempt": 1
+}

@@ -1,0 +1,16 @@
+{
+  "id": "44932350311",
+  "createdAt": "2026-11-21T17:51:50Z",
+  "event": "pull_request",
+  "headBranch": "p209b-probe-20261121",
+  "headSha": "99a4e474768e0397c4473c90dbd9fc953a86f175",
+  "status": "completed",
+  "conclusion": "cancelled",
+  "selection": null,
+  "core": null,
+  "coreLookup": "not-needed",
+  "issues": [
+    "run conclusion is not success or failure: cancelled"
+  ],
+  "attempt": 1
+}

@@ -1,0 +1,16 @@
+{
+  "id": "44726919165",
+  "createdAt": "2026-11-20T11:21:20Z",
+  "event": "pull_request",
+  "headBranch": "p23-registry-20261119",
+  "headSha": "c089abc8162b0696e2267b4d0205b449263f9e44",
+  "status": "completed",
+  "conclusion": "cancelled",
+  "selection": null,
+  "core": null,
+  "coreLookup": "not-needed",
+  "issues": [
+    "run conclusion is not success or failure: cancelled"
+  ],
+  "attempt": 1
+}

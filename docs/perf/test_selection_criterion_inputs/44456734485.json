@@ -1,0 +1,16 @@
+{
+  "id": "44456734485",
+  "createdAt": "2026-11-19T04:12:43Z",
+  "event": "pull_request",
+  "headBranch": "p22-alloc-core-20261118",
+  "headSha": "6b528cab6386646714488adf683a61a00dfef444",
+  "status": "completed",
+  "conclusion": "cancelled",
+  "selection": null,
+  "core": null,
+  "coreLookup": "not-needed",
+  "issues": [
+    "run conclusion is not success or failure: cancelled"
+  ],
+  "attempt": 1
+}
