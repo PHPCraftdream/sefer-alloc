@@ -12,6 +12,9 @@ documentation = "https://docs.rs/sefer-alloc-api"
 keywords = ["allocator", "memory", "allocation"]
 categories = ["memory-management"]
 
+[lints]
+workspace = true
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
