@@ -1,8 +1,10 @@
 # J13b budget/config runtime (task #47) — delivery manifest
 
-**Current state (2026-11-10):** PR #226 VM foundation and PR #225 runtime are merged in current main; PR #227 repairs landing history and PR #228 closes that incident (`bad95849`). Task #49 Auto learning is accepted on exact `6c2ba419`, CI `42512485612`; the text below remains the dated Task47 delivery receipt. Defaults remain Off; no J13b measurement or campaign GO. Historical J13 campaign-2 RSS NO-GO and owner acceptance remain preserved in immutable `7ae557aa:docs/perf/J13_OWNER_DECISION.md`; old misses are not an automatic veto for review of materially new problems in current range Always. The owner-approved limited Always-vs-Off first-PR delivery direction is registered in `docs/perf/J13_LIMITED_STUDY_PREREG.md`; it does not authorize execution or replace the broader plan. The remaining product question is disposition of materially new regressions; no new numeric gate is implied. Header size is 144 bytes; Ir cost remains unknown (item 264).
+**Closure note (2026-11-24):** The owner closed the J13b measurement-system backlog as record, not GO; the campaign was not performed. The authentic builder, backend adapters, runtime-row admission and full Auto/budget campaign remain unfinished historical scope, not a current plan. Auto remains opt-in without GO. Supported-Linux Always for fresh Large requests ≥8 MiB shipped in PR #231 / source `3fd1fb96a711c77509d5a5c534b33221d9fa493f`. A real future need (such as an Auto-default proposal) restarts from decomposition against then-current main. The following is the historical Task47 delivery record; item 264 remains independent, with header Ir effect UNKNOWN.
 
-Status: foundation IMPLEMENTATION VERIFIED by exact CI `42444595011` on `f7925dc899707281af2d7acf59cc4705503144a4`; not a performance GO. Class: `perf(opt-in)` (defaults unchanged).
+**Historical snapshot (2026-11-10; not current guidance):** PR #226 VM foundation and PR #225 runtime are merged in current main; PR #227 repairs landing history and PR #228 closes that incident (`bad95849`). Task #49 Auto learning is accepted on exact `6c2ba419`, CI `42512485612`; the text below remains the dated Task47 delivery receipt. Defaults remain Off; no J13b measurement or campaign GO. Historical J13 campaign-2 RSS NO-GO and owner acceptance remain preserved in immutable `7ae557aa:docs/perf/J13_OWNER_DECISION.md`; old misses are not an automatic veto for review of materially new problems in current range Always. The owner-approved limited Always-vs-Off first-PR delivery direction is registered in `docs/perf/J13_LIMITED_STUDY_PREREG.md`; it does not authorize execution or replace the broader plan. The remaining product question is disposition of materially new regressions; no new numeric gate is implied. Header size is 144 bytes; Ir cost remains unknown (item 264).
+
+Status (historical Task47 receipt): foundation IMPLEMENTATION VERIFIED by exact CI `42444595011` on `f7925dc899707281af2d7acf59cc4705503144a4`; not a performance GO. Class: `perf(opt-in)` (defaults unchanged at that delivery).
 
 Parent inspected actual-source Loom job `128621483903`: all three tuple-publication and both ledger cases passed. Matrix job `128621483811` executed the pre-syscall charge-return and failed-release charge-retention tests (one actual pass each; zero-test feature rows excluded), plus 12 selector and 14 planner tests in six rows. The overall run, including aarch64 and Miri, completed SUCCESS. The completed observation worktree and branch were removed only after byte-preserving source snapshots and personal comparison; this closes tasks #47/#55, not runtime sampling/learning #48/#49 or the performance campaign.
 
@@ -31,9 +33,10 @@ The delivery commit combines the opt-in runtime, its tests, standalone observati
 - Dated design record: `docs/perf/J13B_BOUNDED_THP_PREREG.md`, "2026-11-06 #47 implementation amendment".
 - Declared limitations: `docs/CORRECTNESS_OPEN_ITEMS.md` items 262–267. UNKNOWN until CI: CI host THP mode; iai Ir effect of the 8-byte header growth and of the added Acquire load on the fresh Large path.
 
-## Production default impact
+## Production default impact (historical Task47 record; superseded 2026-11-24)
 
 Unchanged. With no THP knob set nothing is published, the tuple reads `(Off, 8 MiB, budget 0 = unlimited, CAUTIOUS)` and no Large mapping is ever advised. `production` feature composition is unchanged; no new feature, dependency, `Cargo.toml` edit or version change. The only always-on effects are one Acquire load per fresh Large reservation and the 8-byte header growth (Ir unmeasured).
+**Later update (2026-11-24):** supported-Linux default Always for fresh Large requests ≥8 MiB shipped in PR #231 (source `3fd1fb96`); the original Task47 text above is historical.
 
 ## Measurements and artifacts
 

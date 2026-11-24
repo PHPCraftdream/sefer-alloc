@@ -301,7 +301,7 @@ Item 188 is CLOSED (2026-10-13); it is not a current record here — its closure
     > - **Next trigger:** P20 actual-source model when the maintenance service gets a seam for its worker loop; otherwise every phase of the plan is delivered; P20 actual-source model when the service gets a seam for its worker loop; shadow models still bound by R8 only: owner drain, active-kind and the P1–P5/P12 models.
     > - **Evidence:** `docs/GHOST_CHECKS_PLAN.md` §2 (inventory), §8 (phases and exit criteria), §9 (metrics); `docs/evidence/registry.csv` rows R4b-13/R4b-14 and the 15 `scope = shadow-model` rows.
 
-265. **[T, filed 2026-11-06, J13b #47] THP actual-source Loom models await CI execution; kani arithmetic coverage remains open.** (Prereg amendment item 10.)
+265. **[T, filed 2026-11-06, J13b #47] THP actual-source Loom cases executed; discriminating mutants and Kani arithmetic coverage remain incomplete.** (Prereg amendment item 10.)
 
     > **Current state**
     > - **Status:** PARTIAL — actual-source Loom execution is verified: CI `42444595011` on `f7925dc8`, job `128621483903`, passed all three tuple and both ledger cases. Real-code model-mutant rejection remains unverified, and Kani arithmetic coverage is absent.
