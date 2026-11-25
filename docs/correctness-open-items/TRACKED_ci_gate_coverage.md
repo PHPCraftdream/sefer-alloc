@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it is about whether an existing test, oracle, or guard script actually RUNS under some gate (npm run check and/or a CI job) -- wiring, dead scripts, missing feature/profile rows, sentinel-guard scope -- as opposed to whether the underlying OS behavior is platform-verified or proof-verified (the two categories above).
 
-**Card count:** 35 numbered records (re-derived 2026-11-17 after filing items 281–283; items 107 and 175 are CLOSED and not current records here, and item 275 is now a CLOSED pointer retained for lookup — full closure records in `RESOLVED.md`). 36 numbered records after item 284 was filed 2026-11-17 (P0.2 verdict round; nothing closed). P2.5 adds items 285–288 and moves closed item 284 to `RESOLVED.md`: 39 numbered records (including the retained item 275 pointer). 40 numbered records after item 289 was filed 2026-11-22 (P2.5 CI-infrastructure observation; nothing closed).
+**Card count:** 35 numbered records (re-derived 2026-11-17 after filing items 281–283; items 107 and 175 are CLOSED and not current records here, and item 275 is now a CLOSED pointer retained for lookup — full closure records in `RESOLVED.md`). 36 numbered records after item 284 was filed 2026-11-17 (P0.2 verdict round; nothing closed). P2.5 adds items 285–288 and moves closed item 284 to `RESOLVED.md`: 39 numbered records (including the retained item 275 pointer). 40 numbered records after item 289 was filed 2026-11-22 (P2.5 CI-infrastructure observation; nothing closed). 39 numbered records after item 281 moved to `RESOLVED.md` (2026-11-25, `TEST_SELECTION=enforce` set).
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -383,13 +383,6 @@ Item 107 is CLOSED (2026-10-13); it is not a current record here — its closure
     > - **Evidence:** `scripts/test-inventory.mjs` (lands in main with the P0.2 pilot PR), lines ~12–19, 85–97, 385–394 — approximate, from the pilot branch; `docs/plans/2026-11-15-workspace-restructure-plan.md` (P0.2).
 
 Item 260 is CLOSED (2026-11-09); the accepted two-phase proof and full history are in `RESOLVED.md` §260.
-
-281. **[T, filed 2026-11-17, revision 4 of `docs/plans/2026-11-15-workspace-restructure-plan.md`] `TEST_SELECTION=enforce` enablement by the revision-4 criterion.**
-
-    - **Status:** OPEN — the criterion is met (PASS); the repository variable is set only after this data refresh lands green on `main`.
-    - **Current (2026-11-25, window refresh):** a guarded collector pass on `main` `4e1f0b6e` (33 GitHub calls, 93 runs, listing complete) regenerated `docs/perf/TEST_SELECTION_CRITERION.md`: **PASS** — 93 run IDs: 30 informative (15 all, 15 subset), 22 uninformative, 41 excluded; shortfall 0; 0 confirmed misses; 0 run IDs with unresolved red evidence; 0 with unresolved attempt evidence. `TEST_SELECTION` is still unset at this commit. The earlier `INSUFFICIENT_WINDOW` refresh (85 run IDs, 26/30 informative, rerun `44971847014` resolved and excluded as `CI: full`) is superseded by this report.
-    - **Next trigger:** once the PR carrying this refresh lands green on `main`, set the repository variable (`gh variable set TEST_SELECTION --body enforce`), then move this card to `RESOLVED.md` with the landing SHA. Watch the first enforced runs: a selection miss (a test the subset skipped that the full run would have failed) reverts the variable to unset and reopens this card.
-    - **Evidence:** `docs/perf/TEST_SELECTION_CRITERION.md`; PR #258 (`a3194012`); `scripts/test-selection-impact.mjs`; `.github/workflows/ci.yml:580-614`; `docs/perf/TEST_SELECTION_ENFORCE_IMPACT.md`.
 
 282. **[T, filed 2026-11-17, revision 4 of `docs/plans/2026-11-15-workspace-restructure-plan.md`] CI critical path — rebalance check-matrix by rows and aarch64 (perf item 155).**
 
