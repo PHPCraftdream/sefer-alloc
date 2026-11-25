@@ -288,8 +288,8 @@ card. A reader or script citing a `[T]` item by number looks it up here (or grep
   are single confirmed platform-divergence bugs (Windows decommit crash;
   numa-shim macOS+miri fix unconfirmed on real macOS) of the identical
   shape.
-- **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (40
-  numbered records, including the retained CLOSED pointer for item 275; items 107, 175 and 284 are in `RESOLVED.md`) — local/CI gate wiring & sentinel/guard-script coverage.
+- **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (39
+  numbered records, including the retained CLOSED pointer for item 275; items 107, 175, 281 and 284 are in `RESOLVED.md`) — local/CI gate wiring & sentinel/guard-script coverage.
   Criterion: whether an existing test, oracle, or guard script actually
   RUNS under some gate (`npm run check` and/or a CI job) — wiring, dead
   scripts, missing feature/profile rows, sentinel-guard scope — as opposed
@@ -660,7 +660,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\| `TRACKED_[^`]+\.md` \|' docs/CORRECTNESS_OPEN_IT
 | 278 | `RESOLVED.md` |
 | 279 | `RESOLVED.md` |
 | 280 | `RESOLVED.md` |
-| 281 | `TRACKED_ci_gate_coverage.md` |
+| 281 | `RESOLVED.md` |
 | 282 | `TRACKED_ci_gate_coverage.md` |
 | 283 | `TRACKED_ci_gate_coverage.md` |
 | 284 | `RESOLVED.md` |

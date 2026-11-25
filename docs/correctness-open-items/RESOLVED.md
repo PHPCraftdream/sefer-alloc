@@ -22,6 +22,15 @@ same-day item-number-range split. The split reversed item 86's
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+### 281 — `TEST_SELECTION=enforce` enablement by the revision-4 criterion: CLOSED (2026-11-25)
+
+281. **[T, filed 2026-11-17, revision 4 of `docs/plans/2026-11-15-workspace-restructure-plan.md`] `TEST_SELECTION=enforce` enablement by the revision-4 criterion.**
+
+    - **Status:** CLOSED (2026-11-25) — the repository variable `TEST_SELECTION` is `enforce`.
+    - **Resolution:** the guarded collector pass on `main` `4e1f0b6e` (33 GitHub calls, 93 runs, listing complete) regenerated `docs/perf/TEST_SELECTION_CRITERION.md` with verdict **PASS**: 30 informative runs (15 all, 15 subset), 22 uninformative, 41 excluded; shortfall 0; 0 confirmed misses; 0 unresolved red or attempt evidence. The refresh landed in PR #299 (merge `f80e3d1d`, landing CI run `45697278186` green); the variable was set after that landing.
+    - **Reopen trigger:** a selection miss in an enforced run (a test the subset skipped that the full run would have failed) reverts the variable to unset and reopens this item.
+    - **Evidence:** PR #299; `docs/perf/TEST_SELECTION_CRITERION.md`; PR #258 (`a3194012`); `scripts/test-selection-impact.mjs`; `.github/workflows/ci.yml:580-614`; `docs/perf/TEST_SELECTION_ENFORCE_IMPACT.md`.
+
 - 205. **CLOSED (2026-11-21, P2.5 #187): VER-04 Large/saturation proofs and consolidated Kani CI.** — full closure narrative in `docs/correctness-open-items/ARCHIVE.md` (formerly `docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md`) § "Recently resolved — full closure trail"; [CI job `136956334980`](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/44940255958/job/136956334980) on `668c0361` ran all five harnesses.
 
 ### 284 — README magazine-oracle path pin: CLOSED (2026-11-21)
