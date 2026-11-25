@@ -68,9 +68,10 @@
 //!
 //! # cfg gating (read this before editing an arm)
 //!
-//! `production` CONTAINS `primordial-lazy-commit` but NOT
-//! `small-segment-lazy-commit`, `large-cache-extended` or `numa-aware`, so
-//! the four verification invocations land in four DIFFERENT policy worlds.
+//! `production` CONTAINS `primordial-lazy-commit` and `large-cache-adaptive`
+//! (which pulls in `large-cache-extended`), but NOT
+//! `small-segment-lazy-commit` or `numa-aware`, so the four verification
+//! invocations land in four DIFFERENT policy worlds.
 //! The lazy arms are therefore split by what the reservation ACTUALLY does,
 //! not by what the feature is named:
 //!

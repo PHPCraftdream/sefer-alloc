@@ -37,7 +37,7 @@ cargo add sefer-alloc --features production
 
 The `production` feature is the intended long-running bundle, pending
 terminal-sidecar acceptance. It is shorthand for
-`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit` — the drop-in
+`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit + large-cache-adaptive` — the drop-in
 `GlobalAlloc` face, terminal-sidecar cross-thread free, OS page decommit, and
 the per-thread fast-bin magazine. Without `alloc-decommit` the
 `SegmentTable`'s free-list still recycles freed large-segment slots
@@ -232,17 +232,17 @@ not an RSS bound (see `budget_bytes` above for an actual cap):**
 | `LargeCachePolicy::LowHeadroom` | `16 MiB` | **discloses a cost**: 12.5-percentage-point large-cache hit-rate loss vs 64/256 MiB (87.5 % vs 100.0 %, exact at 1/8/32 threads — [`R30_6`](docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md) §0.1) |
 | `LargeCachePolicy::Trimmed64MiB` | `64 MiB` | full 100.0 % hit-rate parity with the 256 MiB default **at a 64 MiB rounded working set** (~34–37 MiB/heap vs ~238–241 MiB/heap post-drain floor — [`R30_6`](docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md) §0/§8, [`R29_13`](docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md) §0) — but **NOT beyond that boundary**: [`R31_1`](docs/perf/R31_1_LARGE_CACHE_HEADROOM_CROSSING_REGIME_GATE.md) measured the tie BREAKING at 128 MiB/288 MiB bursts, paying the SAME 12.5-percentage-point loss as `LowHeadroom` |
 | `LargeCachePolicy::Default` | `256 MiB` (`production` default, unchanged) | baseline — the value `SeferAlloc::new()` already uses |
-| `LargeCachePolicy::DiverseTurnover` | `256 MiB` (same floor as `Default`) | **requires the `large-cache-extended` Cargo feature to do anything** — see below |
+| `LargeCachePolicy::DiverseTurnover` | `256 MiB` (same floor as `Default`) | profile value remains opt-in configuration; `large-cache-extended` widening is included in `production` — see below |
 
 `LargeCachePolicy::DiverseTurnover` is a named, explicitly opt-in policy
 (task #491) for a workload with genuinely diverse, repeatedly-reused
 Large-object sizes (more than the base cache's 8 slots) — it is **not** a
-blanket throughput default and is **not** in `production`. It requires
-`--features large-cache-extended` (EXPERIMENTAL, opt-in) to have any effect:
-without that feature compiled in, this policy value resolves byte-identical
-to `Default`, because widening the large-segment free-cache from 8 to 40
-slots happens at COMPILE time, which a `Profile` axis value cannot select at
-runtime. Choosing this policy means choosing three measured things together,
+blanket throughput default. The `large-cache-extended` widening feature is
+included in `production`; selecting the `DiverseTurnover` profile value
+remains opt-in configuration. Under the `production` default, adaptive
+retention grows the cache up to 256 total slots based on learned reuse,
+rather than stopping at the fixed 40 slots. Choosing this policy means
+choosing three measured things together,
 not a free lunch on any one of them:
 
 - **Turnover win:** hit rate 33.3 % → 100 % on a workload cycling through
@@ -339,9 +339,9 @@ first touch); returning it lowers RSS. The defaults favour speed for bursts that
 | Setting | How it works | Faster when | Costs | Change it when |
 |---|---|---|---|---|
 | [`Profile`](#named-profiles-profile-alloc-decommit) (`SeferAlloc::with_profile`) | Named presets for the two axes below (small pool, large cache); `Profile::new()` is the default | — | — | You want a measured preset instead of individual numbers |
-| `.headroom_bytes` (large cache, default 256 MiB per heap) | A freed Large block (above ~253 KiB, rounded up to whole 4 MiB segments) is kept in the heap's cache; the time decay gives cached bytes above this floor back to the OS | The same large sizes are allocated again soon after being freed | Up to this many bytes stay committed per heap after a burst | Many threads each touch Large blocks and the sum of floors is too much for the machine (lower it), or a burst is bigger than the floor and is re-faulted every round (raise it) |
+| `.headroom_bytes` (large cache, default 256 MiB per heap) | A freed Large block (above ~253 KiB, rounded up to whole 4 MiB segments) is kept in the heap's cache; the time decay gives cached bytes above this floor back to the OS | The same large sizes are allocated again soon after being freed | **256 MiB decay floor plus learned adaptive extra, bounded by the heap's recent peak of live Large bytes; `budget_bytes` remains the hard ceiling** | Many threads each touch Large blocks and the sum of floors is too much for the machine (lower it), or a burst is bigger than the floor and is re-faulted every round (raise it) |
 | `.budget_bytes` (large cache, default unbounded) | Hard ceiling on cached bytes per heap: a free that would exceed it evicts the oldest cached spans first; `0` turns the cache off | — | A burst bigger than the ceiling is partly re-reserved and re-faulted | You need a real RSS bound for the Large cache (containers) |
-| `.decay_interval_ms` / `.decay_rate_percent` (default 1000 ms / 10 %) | Each due interval releases this fraction of the bytes above the floor; checked on Large allocs/frees, never on a timer | — | Faster decay = less memory held, more re-faults on the next burst | Bursts repeat less often than every few intervals, so the cache has shrunk before they return (raise the interval), or memory must go back sooner (lower it, or raise the rate) |
+| `.decay_interval_ms` / `.decay_rate_percent` (default 1000 ms / 10 %) | Each due interval releases this fraction of the bytes above the decay target (the floor plus the learned adaptive extra), at least 75 % after a quiet interval under adaptive retention; checked on Large allocs/frees, never on a timer | — | Faster decay = less memory held, more re-faults on the next burst | Bursts repeat less often than every few intervals, so the cache has shrunk before they return (raise the interval), or memory must go back sooner (lower it, or raise the rate) |
 | `.pool(SmallSegmentPoolConfig…)` (default 4 segments / 16 MiB per heap) | Empty 4 MiB small-block segments are kept, with their free lists, up to `min(pool_segments, pool_byte_cap / 4 MiB)`; the rest go back to the OS. A kept segment is reused only by the size classes it already has free blocks for | Small-block bursts of the same sizes grow and shrink a heap repeatedly | That many committed segments per heap | A heap re-grows by more than 16 MiB every cycle in the same sizes (raise both numbers together); a workload that switches sizes gains nothing ([details](#tuning-the-small-segment-pool-alloc-decommit)) |
 | `.depot_budget_bytes` (default 1 MiB per heap) | Full magazines of freed small blocks are parked up to this budget instead of going back to segment free lists | A free burst is followed by an alloc burst of the same sizes | The budget per heap | Memory per thread matters more than this path (`0` turns it off) |
 | `.route_pin_cache_slots` (default 32, process-wide) | Per-thread cache used when a block is freed by a thread other than the one that allocated it | Producer/consumer threads free into many owners' segments | ≈ 0.29 MiB per slot per freeing thread | Many cross-thread owners per freeing thread (raise) or many idle producer threads (lower) |
@@ -350,11 +350,7 @@ first touch); returning it lowers RSS. The defaults favour speed for bursts that
 
 Three facts that the table cannot show:
 
-- **The large cache keeps at most 8 blocks per heap** (40 with the opt-in `large-cache-extended` feature, chosen at
-  compile time). A cached block serves a request that is no larger than it and at least half its size. When all slots
-  are full, a free gives the oldest cached block back to the OS, whatever the headroom. So a program that frees and
-  re-allocates a working set of more than 8 Large blocks re-faults most of it every round: 47.6× (Windows) and 63.1×
-  (Linux) slower than mimalloc for 128 × 16 MiB in
+- **The large cache keeps at most 8 base blocks per heap** (40 with `large-cache-extended` alone; with the `production` default `large-cache-adaptive`, it can open learned extension slots up to 256 total). A cached block serves a request that is no larger than it and at least half its size. When all addressable slots are full, a free gives the oldest cached block back to the OS, whatever the headroom. Without adaptive retention, a program that frees and re-allocates a working set of more than 8 Large blocks re-faults most of it every round: 47.6× (Windows) and 63.1× (Linux) slower than mimalloc for 128 × 16 MiB in
   [`docs/perf/J11_BIG_BLOCK_JUDGE_MAP.md`](docs/perf/J11_BIG_BLOCK_JUDGE_MAP.md). Raising `headroom_bytes` does not
   change that; the slot count does.
 - **Retention is per heap.** With one heap per active thread, every number above multiplies by the number of threads
@@ -364,20 +360,14 @@ Three facts that the table cannot show:
   worker started by `SeferAlloc::start_maintenance()` reclaims heaps no thread currently owns; it does not take over
   a live thread's caches (see [Memory policy](#memory-policy--read-this-before-you-deploy-seferallocnew)).
 
-**Learned retention (opt-in Cargo feature `large-cache-adaptive`, not in `production`).** The fixed 8 slots above are the
-wrong size for a program that frees and re-allocates a big working set, and the right size depends on the program. With the
-feature the heap learns it: an allocation that misses the cache while a span the cache recently gave back would have served it
+**Learned retention (enabled by `production` via Cargo feature `large-cache-adaptive`).** The fixed 8 slots are the
+wrong size for a program that frees and re-allocates a big working set, and the right size depends on the program. The heap learns it: an allocation that misses the cache while a span the cache recently gave back would have served it
 is counted as a *mistake*, with the number of bytes given back since that span left as its *distance*. A decaying histogram of
-distances yields the retention that would have prevented 90 % of the recent mistakes; the cache keeps `headroom_bytes` plus that
-learned extra, never more than the heap's own recent peak of live Large bytes, and opens extension slots (up to 256 in total)
-only under that target. It starts as the production cache (no byte budget unless you set `budget_bytes`). When the habit
-stops (an interval with no mistakes and little use of the retained memory) the extra halves each interval and the decay releases
-3/4 of the excess per step, so the memory goes back to the `headroom_bytes` floor within about ten decay intervals.
-Measured (`docs/perf/J14_ADAPTIVE_LARGE_CACHE_C2.md`, real `#[global_allocator]`, Windows and Linux): warm rounds of freeing and
-re-allocating 2 GiB (128 x 16 MiB and 16 x 128 MiB) run at the speed of mimalloc (sefer / mimalloc 0.96–1.17) instead of
-27–67 times slower; the first round and workloads without reuse are unchanged. The price is the point: the heap keeps the whole
-habit-sized working set (end RSS equals the working set) until the habit stops. Tune the floor with `headroom_bytes`, cap the
-total with `budget_bytes` (an explicit budget stays a hard cap). Per heap, like every number above.
+distances yields the retention that would have prevented 90 % of recent mistakes; the cache keeps `headroom_bytes` plus that
+learned extra, never more than the heap's own recent peak of live Large bytes, and opens extension slots (up to 256 total)
+only under that target. It starts as the base cache (no byte budget unless you set `budget_bytes`). When the habit
+stops (an interval with no mistakes and little use of the retained memory) the extra halves each interval and decay releases
+3/4 of the excess per step, returning memory toward the `headroom_bytes` floor. To use the old fixed 8-slot behavior, build without `large-cache-adaptive` and `large-cache-extended` (there is no runtime mode switch); use the other `production` features: `alloc-global alloc-xthread alloc-decommit fastbin alloc-segment-directory primordial-lazy-commit`. J14 C2's warm 2 GiB free/re-alloc rounds ran at mimalloc speed (sefer/mi 0.96–1.17) versus 27–67× slower without; its formal NO-GO was solely the Windows many-16x128 MiB A/A cell (0.949–1.000) not containing 1, accepted by the owner on 2026-11-25. The separate Windows A/B found `large` x/base 0.655 (0.602–0.712) and x/mi 0.952 (0.803–1.128); ratios only meaningful (CPU-capped run). See [`docs/perf/P217_ADAPTIVE_PROMOTION.md`](docs/perf/P217_ADAPTIVE_PROMOTION.md) for the bounded interpretation and full data.
 
 ```rust
 use sefer_alloc::{SeferAlloc, LargeCacheConfig, LargeCacheMode};
@@ -422,7 +412,7 @@ large it can get, and what bounds it, so a deployment can add up the worst case 
 
 | Setting | Scope | Most memory it can hold | What shrinks it |
 |---|---|---|---|
-| `.headroom_bytes` / `.budget_bytes` / `.decay_*` (large-segment cache) | per heap (per thread) | the decay floor `headroom_bytes` (default 256 MiB); `budget_bytes` is the only hard ceiling | the decay tick, on large allocs and frees ([Decommit and large-cache](#decommit-phase-35-and-large-cache-opt-e)) |
+| `.headroom_bytes` / `.budget_bytes` / `.decay_*` (large-segment cache; adaptive retention is enabled in `production`) | per heap (per thread) | decay floor `headroom_bytes` (default 256 MiB), plus learned extra bounded by recent peak live Large bytes; `budget_bytes` is a hard ceiling | decay ticks on large allocs and frees; quiet intervals forget learned extra |
 | `.pool(pool_segments, pool_byte_cap)` (empty small segments) | per heap | `min(pool_segments, pool_byte_cap / 4 MiB)` × 4 MiB, committed (default 16 MiB) | decay on allocator activity, not while the thread is idle; `trim`, thread exit |
 | `.depot_budget_bytes` (parked magazines) | per heap | the budget (default 1 MiB) plus the fixed 241,408 B floor | decay on cold events; `trim`, thread exit |
 | `.route_pin_cache_slots` (foreign-free route cache) | per freeing thread, count set process-wide | slots × ≈ 0.29 MiB of route descriptors (default 32 slots ≈ 9.3 MiB) | a miss sweeps dead entries; thread exit |
@@ -1618,7 +1608,7 @@ acceptance; the historical throughput tables above are not a fresh GO verdict.
 ## Verification evidence
 
 This is a verification-first project, but the terminal-sidecar snapshot still
-needs its acceptance run. The present tree contains **510 integration test files**,
+needs its acceptance run. The present tree contains **511 integration test files**,
 **107 example binaries**, **34 benches**, and **27 root Loom models**
 in `tests/`, plus two member-crate
 real-type suites; **3 libFuzzer targets** in `fuzz/`
@@ -1628,7 +1618,7 @@ and support modules. Nested helpers and fixtures are not separate integration ta
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (510 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (511 files) |
 | Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (107 files) |
 | Benches | Reproducible performance and gate harnesses | `benches/*.rs` (34 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
@@ -1669,7 +1659,8 @@ The full safety stack and the relationship between layers is documented in
 | `alloc-decommit` | `alloc-core` | Return empty-segment payload pages to OS + `SegmentTable` slot-recycle | off | long-running / DBMS workloads |
 | `numa-aware` | `alloc-core` | NUMA-node stamping + local-node preference (Linux `mbind`, Windows `VirtualAllocExNuma`) | off | multi-socket NUMA hardware |
 | `fastbin` | `alloc-global + alloc-xthread` | Per-thread magazine (tcache) fast path — array-based per-class pop/push, M2 protected by hot-metadata oracles (no block-body touch) | off (on under `production`) | server-churn / mixed-size multi-threaded workloads |
-| **`production`** | `alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit` | Intended long-running bundle; terminal-sidecar acceptance and new performance gates are still pending. Explicit `start_maintenance()` is required for autonomous ownerless progress. | off | Evaluate with the current release-readiness gates before deployment. |
+| **`production`** | `alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit + large-cache-adaptive` | Intended long-running bundle; terminal-sidecar acceptance and new performance gates are still pending. Explicit `start_maintenance()` is required for autonomous ownerless progress. | off | Evaluate with the current release-readiness gates before deployment. |
+| `large-cache-adaptive` | `large-cache-extended` | Learns Large-cache retention from reuse; up to 256 total slots within learned target | off (on under `production`) | default long-running bundle; omit `large-cache-adaptive` and `large-cache-extended` for fixed 8-slot behavior |
 | `alloc-stats` | `alloc-core` | Per-hit **diagnostic** counters: bumps `stats().tcache_hits` (magazine) and `stats().large_cache_hits` (large cache) on each hit. Default OFF and **NOT** in `production` — the per-hit increment is compiled out of the churn/large-cache hot paths, and without it those two `stats()` fields read `0` (all other `stats()` fields are unaffected). The counter storage lives in the shared registry slot, so toggling this never changes layout/ABI. | off | you poll `stats().tcache_hits` / `.large_cache_hits` and want the real hit counts (add alongside `production`) |
 | `hardened` | `fastbin` | Opt-in own-thread interior-pointer guard, rejecting non-block starts; detected Small free-list corruption (bad head or continuation, cycle) aborts the process after a stderr line instead of returning null. It does not make duplicate or invalid foreign frees legal; the old X7 ring generation path was removed with the ring. | off | Extra misuse detection, subject to current acceptance gates. |
 | `misuse-checks` | — | Checks that reject a contract violation (double free, foreign or interior pointer, a layout that differs from the allocation's, an old layout larger than the block): the per-block state byte, the payload-start and bump bounds, the flush and reclaim guards, the realloc and Large-free address checks. **Needed only when unsafe code can pass such a pointer; safe code cannot.** Without it a release build runs none of them and such a call is undefined behaviour, as the `GlobalAlloc` contract allows (debug builds keep them and abort on a hit). | off in `production`; on in `hardened` | unsafe code, FFI, untrusted pointers |
@@ -1711,19 +1702,23 @@ runtime parse errors.
 
 | Builder method | Default | Meaning |
 |---|---|---|
-| `budget_bytes(n)` | `None` (**unbounded**) | Per-shard ceiling on total cached bytes. `0` = cache disabled (every span released to the OS immediately). **Unset = no admission limit**; FIFO eviction fires only when this is set and the new span would exceed it. |
-| `decay_rate_percent(n)` | `10` (10 %/tick) | Integer percent of `excess = cached − headroom` to release back to the OS per tick. Range `[1, 100]`, clamped. |
+| `budget_bytes(n)` | `None` | Per-shard ceiling on total cached bytes. `0` = cache disabled (every span released to the OS immediately). With the `production` default (adaptive retention), unset means no hard byte admission limit: extension slots grow only under the learned target; without adaptive retention but with `large-cache-extended`, unset resolves to the 256 MiB default, and with neither feature it is unbounded. An explicit `.budget_bytes(n)` always wins as a hard cap. |
+| `decay_rate_percent(n)` | `10` (10 %/tick) | Integer percent of `excess = cached − decay target` to release back to the OS per tick; the target is the headroom floor plus learned adaptive extra when adaptive retention is active; after a quiet interval adaptive retention releases at least 75 %. Range `[1, 100]`, clamped. |
 | `decay_interval_ms(n)` | `1000` (1 s) | Monotonic elapsed-time period for due steps, not minimum spacing between batches. A clock check processes up to eight due intervals and advances the timer by `due × interval`; excess debt remains for later invocations. See the bounded catch-up policy in [Parameters](#parameters). Idle processes pay nothing. |
-| `headroom_bytes(n)` | `256 MiB` | Floor below which the decay is a no-op (anti-thrashing pad). |
+| `headroom_bytes(n)` | `256 MiB` | Floor of the decay target; below it, decay is a no-op (anti-thrashing pad). |
 | `mode(m)` | `LargeCacheMode::Lazy` | `LargeCacheMode::Lazy` is the default and only variant. The enum is `#[non_exhaustive]`, reserved for a future background-scavenger mode as a non-breaking addition. |
 
 The model is "**allocate fast, release slowly**": on a large `free`, the
 span is admitted to the cache (subject to budget); subsequent eligible large
 ops trigger clock checks and bounded catch-up as described above. Each due step
-recomputes the excess over `headroom` and applies the chosen decay rate. No step
-runs before its interval is due, but several steps can run in one invocation.
-The default `budget=None` (unbounded) admits any span; if you
-want a hard RSS ceiling (containers, mobile), add
+computes the excess over the decay target — the headroom floor plus the learned
+adaptive extra when adaptive retention is active (`production` default) — and
+applies the chosen decay rate to that excess (at least 75 % after a quiet
+interval under adaptive retention). The learned extra is bounded by
+the recent peak of live Large bytes, so quiet intervals release learned
+retention first. No step runs before its interval is due, but several steps can
+run in one invocation.
+For a hard RSS ceiling (containers, mobile), add
 `.budget_bytes(512 * 1024 * 1024)` to your config (or whatever fits).
 
 ### Tuning the small-segment pool (`alloc-decommit`)

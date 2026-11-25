@@ -7,6 +7,7 @@
     feature = "alloc-core",
     feature = "large-cache-adaptive",
     feature = "internals",
+    feature = "alloc-stats",
     not(miri)
 ))]
 
