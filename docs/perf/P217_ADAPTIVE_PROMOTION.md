@@ -161,6 +161,11 @@ run (asserted). The `wild` time does not move although its releases drop: its lo
 
 ## 7. Canonical tables
 
-`bench:table` (paired) on the promoted tree: see the README paired table and `docs/perf/p217/bench_paired*`.
+`bench:table:paired` on the promoted tree (commit `8390fee6`, plain `production`, regimes `steady` and
+`fresh:16`, 3 processes × 200 rounds, under the same cap): SeferAlloc is ahead of mimalloc in all 24 cells
+(1.08–4.31× steady, 1.18–15.29× fresh). The README paired tables are rewritten from these runs; samples,
+manifests and CSVs are in `docs/perf/p217/bench_paired_*` (samples gzip-compressed, each over 200 KiB raw).
+The promotion touches the Large path only, so these small-block cells are a no-regression control, not
+evidence for the change.
 The criterion `bench:table` and `npm run iai` were not refreshed in this PR — see the PR description; the
 CI perf gate compares Callgrind `Ir` of the new composition against main.
