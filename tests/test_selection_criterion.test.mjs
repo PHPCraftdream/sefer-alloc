@@ -360,7 +360,7 @@ function sequentialCollector(t) {
   const source = run(31);
   const recordPath = join(inputsDir, `${source.id}.json`);
   const listing = ['api', `${root}/workflows/ci.yml/runs?created=%3E%3D2026-11-17T13:04:56Z&per_page=100&page=1`];
-  const jobs = attempt => ['api', `${root}/runs/${source.id}/attempts/${attempt}/jobs?per_page=100&page=1`];
+  const jobs = (attempt, pageSize = 100) => ['api', `${root}/runs/${source.id}/attempts/${attempt}/jobs?per_page=${pageSize}&page=1`];
   const logs = id => ['api', `${root}/jobs/${id}/logs`];
   const details = ['api', `${root}/runs/${source.id}`];
   const download = ['run', 'download', source.id, '--name', 'test-selection', '--repo', repo, '--dir', '<dir>'];
@@ -369,12 +369,23 @@ function sequentialCollector(t) {
   return {
     jobs, logs, download,
     runDetails: metadata => JSON.stringify(apiRun(source, metadata)),
+    attempt: (n, { conclusion, created }) => JSON.stringify({
+      id: Number(source.id), run_attempt: n, status: 'completed', conclusion,
+      created_at: created, head_sha: source.headSha, event: source.event, head_branch: source.headBranch,
+    }),
+    artifacts: body => JSON.stringify(body),
     collectPass(metadata, requests = [], {
       verify = requests.length > 0,
       verificationResponse = JSON.stringify(apiRun(source, metadata)),
       maxCalls,
     } = {}) {
-      const expected = [[listing, page('workflow_runs', [apiRun(source, metadata)])], ...requests];
+      const expected = [[listing, page('workflow_runs', [apiRun(source, metadata)])], ...requests.map(item => {
+        if (item.length !== 1 || typeof item[0] !== 'string') return item;
+        const body = JSON.parse(item[0]);
+        const endpoint = Array.isArray(body.artifacts) ? `${root}/runs/${source.id}/artifacts?per_page=100&page=1` :
+          `${root}/runs/${source.id}/attempts/${body.run_attempt}`;
+        return [['api', endpoint], item[0]];
+      })];
       if (verify) expected.push([details, verificationResponse]);
       const transcript = [];
       const { listingComplete } = collect({ inputsDir, repo, maxCalls, call(args) {
@@ -404,6 +415,20 @@ function coreJob(id, conclusion) {
     steps: [{ name: 'Selected tests', conclusion: 'skipped' },
       ...CORE_ROWS.map((name, i) => ({ name, conclusion: i === 0 ? conclusion : 'success' }))],
   };
+}
+
+const T1 = '2026-11-18T01:00:00Z';
+const T2 = '2026-11-18T02:00:00Z';
+const T3 = '2026-11-18T03:00:00Z';
+const carriedStart = '2026-11-18T01:05:00Z';
+const rerunArtifact = { total_count: 1, artifacts: [
+  { id: 9001, name: 'test-selection', created_at: '2026-11-18T01:01:00Z', expired: false },
+] };
+function rerunListing(coreId, coreConclusion, selectorStarted = carriedStart) {
+  return [
+    { ...selectorJob, started_at: selectorStarted },
+    { ...coreJob(coreId, coreConclusion), started_at: carriedStart },
+  ];
 }
 
 function assertUnresolvedWindow({ record, listingComplete }) {
@@ -473,15 +498,26 @@ test('collector keeps latest red rerun metadata without borrowing attempt-one ev
   assert.equal(verified.counts.subset, 31);
 
   const latest = fixture.collectPass({ attempt: 2, conclusion: 'failure' }, [
-    [fixture.jobs(2), [{ ...selectorJob, id: 4002 }, coreJob(5032, 'failure')]],
+    [fixture.attempt(1, { conclusion: 'success', created: T1 })],
+    [fixture.attempt(2, { conclusion: 'failure', created: T2 })],
+    [fixture.artifacts(rerunArtifact)],
+    [fixture.jobs(1, 30), rerunListing(5031, 'success')],
+    [fixture.jobs(2, 30), [
+      { ...selectorJob, id: 4002, started_at: '2026-11-18T02:05:00Z' },
+      { ...coreJob(5032, 'failure'), started_at: '2026-11-18T02:06:00Z' },
+    ]],
     [fixture.logs(5032), ghLog(cargoStep(0, [...integrationOutput, ...integrationAggregate, exit]))],
   ]);
   assert.equal(latest.record.attempt, 2);
   assert.equal(latest.record.conclusion, 'failure');
-  latest.assertCalls(); // Attempt-2 jobs and log are scoped; the artifact download is not.
+  latest.assertCalls();
   assert.equal(latest.record.selection, null);
   assert.equal(latest.record.core.id, '5032');
   assert.equal(latest.record.evidenceAttempt, 2);
+  assert.match(latest.record.issues.join('\n'), /selector re-execution in attempt 2 is not ruled out/);
+  // The genuinely observed attempt-1 record stays archived; only the artifact binding is refused.
+  assert.ok(Array.isArray(latest.record.priorAttempts) && latest.record.priorAttempts.length === 1);
+  assert.equal(latest.record.priorAttempts[0].attempt, 1);
   assertUnresolvedWindow(latest);
 });
 
@@ -518,12 +554,19 @@ test('collector preserves an observed red attempt when the latest attempt turns 
   assert.deepEqual(red.record.core.rows[0].evidence, failed(integration));
 
   const { record, listingComplete, assertCalls } = fixture.collectPass({ attempt: 2, conclusion: 'success' }, [
-    [fixture.jobs(2), [{ ...selectorJob, id: 4002 }, coreJob(5032, 'success')]],
+    [fixture.attempt(1, { conclusion: 'failure', created: T1 })],
+    [fixture.attempt(2, { conclusion: 'success', created: T2 })],
+    [fixture.artifacts(rerunArtifact)],
+    [fixture.jobs(1, 30), rerunListing(5031, 'failure')],
+    [fixture.jobs(2, 30), rerunListing(5032, 'success')],
+    [fixture.download],
+    [fixture.logs(5031), ghLog(cargoStep(0, [...integrationOutput, ...integrationAggregate, exit]))],
   ]);
   assert.equal(record.attempt, 2);
   assert.equal(record.conclusion, 'success');
   assertCalls();
-  assert.equal(record.selection, null);
+  // The carried-over selector lets the attempt-1 artifact serve attempt 2 as well.
+  assert.deepEqual(record.selection, seal(rawSubset));
   assert.equal(record.core.id, '5032');
   assert.equal(record.evidenceAttempt, 2);
   assert.ok(Array.isArray(record.priorAttempts));
@@ -539,6 +582,122 @@ test('collector preserves an observed red attempt when the latest attempt turns 
   const { verdict, counts } = evaluateWindow([...greenRuns(), record], { listingComplete });
   assert.equal(counts.misses, 1);
   assert.equal(verdict, 'FAIL');
+});
+
+const greenRerun = { attempt: 3, conclusion: 'success' };
+
+test('collector resolves a rerun whose selector was never re-executed after the artifact attempt', (t) => {
+  const fixture = sequentialCollector(t);
+  const resolved = fixture.collectPass(greenRerun, [
+    [fixture.attempt(1, { conclusion: 'failure', created: T1 })],
+    [fixture.attempt(2, { conclusion: 'failure', created: T2 })],
+    [fixture.attempt(3, { conclusion: 'success', created: T3 })],
+    [fixture.artifacts(rerunArtifact)],
+    [fixture.jobs(1, 30), rerunListing(5031, 'success')],
+    [fixture.jobs(2, 30), rerunListing(5032, 'success')],
+    [fixture.jobs(3, 30), rerunListing(5033, 'success')],
+    [fixture.download],
+  ]);
+  resolved.assertCalls();
+  const { record } = resolved;
+  assert.equal(record.attempt, 3);
+  assert.deepEqual(record.selection, seal(rawSubset));
+  assert.equal(record.coreLookup, 'available');
+  assert.equal(record.core.id, '5033');
+  assert.equal(record.evidenceAttempt, 3);
+  assert.deepEqual(record.issues, []);
+  assert.ok(Array.isArray(record.priorAttempts) && record.priorAttempts.length === 2);
+  const [first, second] = record.priorAttempts;
+  assert.equal(first.attempt, 1);
+  assert.equal(first.conclusion, 'failure');
+  assert.equal(first.evidenceAttempt, 1);
+  assert.deepEqual(first.selection, seal(rawSubset));
+  assert.equal(first.core.conclusion, 'success');
+  assert.equal(first.priorAttempts, undefined);
+  assert.equal(second.attempt, 2);
+  assert.equal(second.evidenceAttempt, 2);
+  assert.deepEqual(second.selection, seal(rawSubset));
+  // Counterfactual: without rerun resolution the same window is blocked.
+  const { verdict, counts } = evaluateWindow([...greenRuns(29), record], { listingComplete: true });
+  assert.equal(counts.informative, 30);
+  assert.equal(counts.subset, 30);
+  assert.equal(counts.unresolvedRed, 0);
+  assert.equal(counts.unresolvedAttempts, 0);
+  assert.equal(verdict, 'PASS');
+  const stale = { ...record, selection: null, core: null, coreLookup: 'unavailable',
+    evidenceAttempt: undefined, priorAttempts: undefined, issues: [], collectionCheck: undefined };
+  assert.equal(evaluateWindow([...greenRuns(29), stale], { listingComplete: true }).verdict, 'INSUFFICIENT_WINDOW');
+
+  const cached = fixture.collectPass(greenRerun, []);
+  cached.assertCalls(); // A stable resolved rerun is cache-only on the next pass.
+  assert.deepEqual(cached.record.selection, seal(rawSubset));
+  assert.equal(cached.record.evidenceAttempt, 3);
+});
+
+test('collector leaves a rerun unresolved when the test-selection artifact is ambiguous', (t) => {
+  const fixture = sequentialCollector(t);
+  const two = { total_count: 2, artifacts: [
+    { id: 9001, name: 'test-selection', created_at: '2026-11-18T01:01:00Z', expired: false },
+    { id: 9002, name: 'test-selection', created_at: '2026-11-18T02:01:00Z', expired: false },
+  ] };
+  const unresolved = fixture.collectPass({ attempt: 2, conclusion: 'failure' }, [
+    [fixture.attempt(1, { conclusion: 'failure', created: T1 })],
+    [fixture.attempt(2, { conclusion: 'failure', created: T2 })],
+    [fixture.artifacts(two)],
+  ]);
+  unresolved.assertCalls();
+  assert.equal(unresolved.record.selection, null);
+  assert.match(unresolved.record.issues.join('\n'), /test-selection artifact is missing or ambiguous/);
+  assertUnresolvedWindow(unresolved);
+});
+
+test('collector leaves a rerun unresolved when the artifact is not provably bound to one earlier attempt', (t) => {
+  const fixture = sequentialCollector(t);
+  const latest = { total_count: 1, artifacts: [
+    { id: 9003, name: 'test-selection', created_at: '2026-11-18T02:30:00Z', expired: false },
+  ] };
+  const unresolved = fixture.collectPass({ attempt: 2, conclusion: 'success' }, [
+    [fixture.attempt(1, { conclusion: 'failure', created: T1 })],
+    [fixture.attempt(2, { conclusion: 'success', created: T2 })],
+    [fixture.artifacts(latest)],
+  ]);
+  unresolved.assertCalls();
+  assert.equal(unresolved.record.selection, null);
+  assert.equal(unresolved.record.priorAttempts, undefined);
+  assert.match(unresolved.record.issues.join('\n'), /not provably bound to a single earlier attempt/);
+  assert.equal(evaluateWindow([...greenRuns(), unresolved.record], { listingComplete: true }).verdict, 'INSUFFICIENT_WINDOW');
+});
+
+test('collector leaves a rerun unresolved when an earlier attempt jobs listing cannot be read', (t) => {
+  const fixture = sequentialCollector(t);
+  const unresolved = fixture.collectPass({ attempt: 2, conclusion: 'success' }, [
+    [fixture.attempt(1, { conclusion: 'failure', created: T1 })],
+    [fixture.attempt(2, { conclusion: 'success', created: T2 })],
+    [fixture.artifacts(rerunArtifact)],
+    [fixture.jobs(1, 30), rerunListing(5031, 'success')],
+    [fixture.jobs(2, 30), transportUnavailable],
+  ]);
+  unresolved.assertCalls();
+  assert.equal(unresolved.record.selection, null);
+  assert.equal(unresolved.record.priorAttempts, undefined);
+  assert.match(unresolved.record.issues.join('\n'), /attempt 2 jobs listing incomplete:.*HTTP 503/);
+  assert.equal(evaluateWindow([...greenRuns(), unresolved.record], { listingComplete: true }).verdict, 'INSUFFICIENT_WINDOW');
+});
+
+test('collector leaves a rerun unresolved when a carried-over selector start time is missing', (t) => {
+  const fixture = sequentialCollector(t);
+  const unresolved = fixture.collectPass({ attempt: 2, conclusion: 'success' }, [
+    [fixture.attempt(1, { conclusion: 'failure', created: T1 })],
+    [fixture.attempt(2, { conclusion: 'success', created: T2 })],
+    [fixture.artifacts(rerunArtifact)],
+    [fixture.jobs(1, 30), rerunListing(5031, 'success')],
+    [fixture.jobs(2, 30), [{ ...selectorJob, id: 4002 }, coreJob(5032, 'success')]],
+  ]);
+  unresolved.assertCalls();
+  assert.equal(unresolved.record.selection, null);
+  assert.equal(unresolved.record.priorAttempts, undefined);
+  assert.match(unresolved.record.issues.join('\n'), /selector re-execution in attempt 2 is not ruled out/);
+  assert.equal(evaluateWindow([...greenRuns(), unresolved.record], { listingComplete: true }).verdict, 'INSUFFICIENT_WINDOW');
 });
 
 test('collector invalidates old jobs and selection when the same attempt changes from success to failure', (t) => {
