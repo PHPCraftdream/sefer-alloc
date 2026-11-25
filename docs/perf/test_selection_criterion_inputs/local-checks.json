@@ -142,5 +142,17 @@
   {
     "command": "capc 10 node scripts/test-selection-criterion.mjs --report (P1.5c regeneration after rerun resolution)",
     "exitCode": 0
+  },
+  {
+    "command": "capc 10 node scripts/collect-test-selection-criterion.mjs (P1.5c window refresh on main 4e1f0b6e; 33 GitHub calls, 93 runs, listing complete)",
+    "exitCode": 0
+  },
+  {
+    "command": "capc 10 node scripts/test-selection-criterion.mjs --report (P1.5c window refresh; verdict PASS)",
+    "exitCode": 0
+  },
+  {
+    "command": "capc 10 node scripts/test-selection-criterion.mjs --check (P1.5c window refresh)",
+    "exitCode": 0
   }
 ]
