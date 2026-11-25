@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] (unreleased)
 
+### Large-cache adaptive retention promotion (2026-11-25)
+
+- [perf(runtime)] Enable `large-cache-adaptive` in `production`. The Large cache can learn reuse retention up to the heap's recent live Large peak, with an explicit `budget_bytes` remaining a hard cap. The owner accepted J14 campaign 2's one unreadable Windows many-16x128 MiB A/A cell (0.949–1.000), which was the sole formal NO-GO basis; warm 2 GiB free/re-alloc rounds ran at mimalloc speed (sefer/mi 0.96–1.17) versus 27–67× slower without. A separate Windows A/B (`g1_wild_judge`, real allocator statics, 12 blocks × minimum of 3, under a 10% CPU cap; ratios only meaningful (CPU-capped run)) recorded `large` x/base 0.655 (0.602–0.712), x/mi 0.952 (0.803–1.128), base/mi 1.454 (1.268–1.668), `seg_released` 589 → 165 and peak RSS 13 → 23 MiB (mimalloc 28 MiB); `wild` 1.019 (0.886–1.172), `regrow` 1.038 (0.977–1.103), `growmix` 1.011 (0.919–1.112) were unchanged within noise. Details: `docs/perf/P217_ADAPTIVE_PROMOTION.md`.
+
 ### Rust Allocator API adapter
 
 - [build] Add the opt-in `sefer-alloc-api` workspace package, which provides a Rust 1.100 `Allocator` adapter backed by `sefer-alloc`; the root crate MSRV and `production` feature bundle are unchanged.

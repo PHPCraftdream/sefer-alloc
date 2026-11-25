@@ -1,0 +1,18 @@
+{
+  "commit_sha": "4e1f0b6e46b3752f59263fb4756c6ac3e76b3c44",
+  "dirty": false,
+  "judge_example": "examples/g1_wild_judge.rs",
+  "base_features": "production internals",
+  "base_sha256": "c9b60022ee9c8fc2faa99c18efd203ab163e8489a209ca9b118b6e3eb618839d",
+  "x_features": "production internals large-cache-adaptive",
+  "x_sha256": "8228f50d41a4348f9015ddc7037c4d62540963cb674659c574b08b8fc1e9603e",
+  "mt_example": "examples/malloc_macro.rs",
+  "mt_features": "production",
+  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "target": "x86_64-pc-windows-msvc",
+  "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz x16",
+  "os": "Windows 10 Pro 10.0.19045 x64",
+  "cpu_cap": "10 % hard job-object CPU rate (capc 10) on every run",
+  "blocks": 12,
+  "repeats": 3
+}

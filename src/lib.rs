@@ -148,7 +148,7 @@
 // membrane, owned by `sefer-concurrent`.
 //
 // The `compile_error!` guards below tell a mis-feature build to "use the
-// `production` feature bundle": alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit.
+// `production` feature bundle": alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit + large-cache-adaptive.
 //
 // ── The soundness boundary is WIDER than the unsafe-syntax boundary ────────────
 //

@@ -1,0 +1,82 @@
+# commit_sha=4e1f0b6e46b3752f59263fb4756c6ac3e76b3c44
+# dirty=false
+# judge_example=examples/g1_wild_judge.rs
+# base_features=production internals
+# base_sha256=c9b60022ee9c8fc2faa99c18efd203ab163e8489a209ca9b118b6e3eb618839d
+# x_features=production internals large-cache-adaptive
+# x_sha256=8228f50d41a4348f9015ddc7037c4d62540963cb674659c574b08b8fc1e9603e
+# mt_example=examples/malloc_macro.rs
+# mt_features=production
+# rustc=rustc 1.97.0 (2d8144b78 2026-07-07)
+# target=x86_64-pc-windows-msvc
+# cpu=11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz x16
+# os=Windows 10 Pro 10.0.19045 x64
+# cpu_cap=10 % hard job-object CPU rate (capc 10) on every run
+# blocks=12
+# repeats=3
+section,scenario_or_cell,metric,value,ci_lo,ci_hi,n
+lm1,grow64,sefer_over_mi,0.975,0.845,1.125,12
+lm1,grow1k,sefer_over_mi,1.031,0.916,1.161,12
+lm1,regrow,sefer_over_mi,1.247,1.057,1.472,12
+lm1,growmix,sefer_over_mi,1.159,1.076,1.248,12
+lm1,wild,sefer_over_mi,1.250,1.081,1.444,12
+lm1,phase,sefer_over_mi,1.001,0.865,1.159,12
+lm1,large,sefer_over_mi,1.401,1.124,1.745,12
+mt,larson T=1,sefer_over_mi_time,0.919,,,6
+mt,larson T=2,sefer_over_mi_time,0.852,,,6
+mt,larson T=4,sefer_over_mi_time,0.744,,,6
+mt,mstress T=1,sefer_over_mi_time,0.498,,,6
+mt,mstress T=2,sefer_over_mi_time,8.605,,,6
+mt,mstress T=4,sefer_over_mi_time,1.073,,,6
+buckets,large,large_alloc_diff_ms,-0.4,-2.5,1.6,12
+buckets,large,large_free_diff_ms,6.5,5.4,7.6,12
+buckets,large,teardown_diff_ms,2.1,1.6,2.5,12
+buckets,large,rest_diff_ms,0.8,0.3,1.3,12
+buckets,large,wall_diff_ms,9.0,5.2,12.7,12
+buckets,large,kernel_diff_ms,2.6,,,12
+buckets,wild,burst_alloc_diff_ms,211.9,-145.5,569.3,12
+buckets,wild,burst_free_diff_ms,10.2,-177.1,197.5,12
+buckets,wild,large_alloc_diff_ms,34.4,-127.4,196.3,12
+buckets,wild,large_free_diff_ms,8.7,6.8,10.6,12
+buckets,wild,large_realloc_diff_ms,-39.2,-199.4,120.9,12
+buckets,wild,small_realloc_diff_ms,0.5,0.1,0.8,12
+buckets,wild,teardown_diff_ms,6.1,3.9,8.3,12
+buckets,wild,rest_diff_ms,258.1,-141.2,657.3,12
+buckets,wild,wall_diff_ms,490.6,225.8,755.4,12
+buckets,wild,kernel_diff_ms,6.3,,,12
+buckets,regrow,teardown_diff_ms,541.7,337.6,745.9,12
+buckets,regrow,rest_diff_ms,-279.6,-579.1,19.8,12
+buckets,regrow,wall_diff_ms,262.1,91.4,432.7,12
+buckets,regrow,kernel_diff_ms,80.7,,,12
+buckets,growmix,teardown_diff_ms,1040.8,806.0,1275.7,12
+buckets,growmix,rest_diff_ms,125.7,-239.2,490.7,12
+buckets,growmix,wall_diff_ms,1166.6,630.5,1702.6,12
+buckets,growmix,kernel_diff_ms,31.1,,,12
+ab,growmix,x_over_base,1.011,0.919,1.112,12
+ab,growmix,base_over_mi,1.270,1.105,1.460,12
+ab,growmix,x_over_mi,1.284,1.143,1.443,12
+ab,growmix,seg_released_base,0,,,
+ab,growmix,seg_released_x,0,,,
+ab,growmix,peak_rss_mib_base,1277,,,
+ab,growmix,peak_rss_mib_x,1277,,,
+ab,regrow,x_over_base,1.038,0.977,1.103,12
+ab,regrow,base_over_mi,1.269,1.169,1.378,12
+ab,regrow,x_over_mi,1.318,1.164,1.492,12
+ab,regrow,seg_released_base,140,,,
+ab,regrow,seg_released_x,140,,,
+ab,regrow,peak_rss_mib_base,646,,,
+ab,regrow,peak_rss_mib_x,646,,,
+ab,large,x_over_base,0.655,0.602,0.712,12
+ab,large,base_over_mi,1.454,1.268,1.668,12
+ab,large,x_over_mi,0.952,0.803,1.128,12
+ab,large,seg_released_base,589,,,
+ab,large,seg_released_x,165,,,
+ab,large,peak_rss_mib_base,13,,,
+ab,large,peak_rss_mib_x,23,,,
+ab,wild,x_over_base,1.019,0.886,1.172,12
+ab,wild,base_over_mi,1.220,1.019,1.461,12
+ab,wild,x_over_mi,1.243,1.019,1.515,12
+ab,wild,seg_released_base,595,,,
+ab,wild,seg_released_x,227,,,
+ab,wild,peak_rss_mib_base,42,,,
+ab,wild,peak_rss_mib_x,56,,,

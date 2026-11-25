@@ -16,9 +16,11 @@
 //! 8 base slots behave as in `production` (no byte budget unless the caller
 //! sets one); extension slots open only while the learned target has room.
 //!
-//! All state lives in the extension sidecar (`AdaptiveState` inside
-//! `LargeCacheExtension`), so `AllocCore`'s size does not change. Without the
-//! feature every hook is an empty inline function.
+//! Occupancy and histogram state live in the extension sidecar (`AdaptiveState`
+//! inside `LargeCacheExtension`); the adaptive-gated booleans in the inline
+//! `LargeCacheDecayConfig` are inline fields, whose size effect is covered by
+//! the compile-time `HeapCore` 9216-byte pin. Without the feature every hook is
+//! an empty inline function.
 
 #[cfg(feature = "large-cache-adaptive")]
 use super::large_cache_extended::{self, LARGE_CACHE_EXTENDED_SLOTS};

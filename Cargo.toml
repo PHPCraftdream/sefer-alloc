@@ -430,9 +430,9 @@ large-reserved-capacity = ["exact-span-large", "aligned-vmem/lazy-commit", "sefe
 # Invariants: materialises only on first overflow of the base 8 slots (zero
 # cost below that); `large_cache_budget_bytes` remains the primary RSS
 # control (slot count only relaxes how many DISTINCT spans may be resident
-# within that same byte budget). Requires `alloc-decommit`. EXPERIMENTAL:
-# opt-in, NOT part of `production`. With this feature OFF, `AllocCore`'s
-# field list, `Drop`, and every large-cache algorithm are byte-for-byte
+# within that same byte budget). Requires `alloc-decommit`. Opt-in directly;
+# included in `production` through `large-cache-adaptive`. With this feature OFF,
+# `AllocCore`'s field list, `Drop`, and every large-cache algorithm are byte-for-byte
 # identical to before this task.
 large-cache-extended = ["alloc-decommit", "sefer-policy?/large-cache-extended", "sefer-segment?/large-cache-extended", "sefer-alloc-core?/large-cache-extended", "sefer-registry?/large-cache-extended"]
 # J14 (EXPERIMENTAL, docs/perf/J14_ADAPTIVE_LARGE_CACHE_PREREG.md): the Large
@@ -440,7 +440,7 @@ large-cache-extended = ["alloc-decommit", "sefer-policy?/large-cache-extended", 
 # every span it gave back to the OS and the program asked for again, shrinks
 # by half of its excess over the base each quiet decay interval, and never
 # exceeds the heap's recent peak of live Large bytes; the extension grows to
-# 248 slots (256 in total). Opt-in, NOT part of `production` until its gates pass.
+# 248 slots (256 in total). Included in `production`.
 large-cache-adaptive = ["large-cache-extended", "sefer-segment?/large-cache-adaptive", "sefer-alloc-core?/large-cache-adaptive"]
 # Phase P2/P4/P7 per-thread magazine cache (tcache) layered over
 # `alloc-global`. 0.3.0 (task A2): now ALSO pulls in `alloc-xthread`. Without
@@ -453,7 +453,7 @@ large-cache-adaptive = ["large-cache-extended", "sefer-segment?/large-cache-adap
 # `alloc-xthread` supplies owner identity and terminal publication; `fastbin`
 # must never build without that cross-thread ownership protocol.
 fastbin = ["alloc-global", "alloc-xthread", "sefer-platform?/fastbin", "sefer-segment?/fastbin", "sefer-alloc-core?/fastbin", "sefer-registry?/fastbin"]
-# Six-feature production bundle (listed below), excluding diagnostic features
+# Seven-feature production bundle (listed below), excluding diagnostic features
 # `alloc-stats`, `internals`, and `bench-internals`. The allocator uses
 # authoritative sidecar terminal bits and owner maintenance, not the retired
 # per-class dirty-ring protocol.
@@ -465,7 +465,7 @@ fastbin = ["alloc-global", "alloc-xthread", "sefer-platform?/fastbin", "sefer-se
 # it), and such a call is undefined behaviour, as the contract allows. Off in
 # `production`; included in `hardened`.
 misuse-checks = ["sefer-segment?/misuse-checks", "sefer-alloc-core?/misuse-checks", "sefer-registry?/misuse-checks"]
-production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "alloc-segment-directory", "primordial-lazy-commit"]
+production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "alloc-segment-directory", "primordial-lazy-commit", "large-cache-adaptive"]
 
 # R34-3 (task #522, release-stabilization audit finding B1): a REAL semver
 # boundary for the `alloc_core` / `global` / `registry` modules, replacing

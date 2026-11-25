@@ -15,6 +15,7 @@ use crate::alloc_core::os;
 #[cfg(feature = "alloc-segment-directory")]
 use crate::alloc_core::segment_header::SegmentHeader;
 use crate::alloc_core::segment_header::FREE_LIST_NULL;
+#[cfg(any(feature = "misuse-checks", debug_assertions))]
 use crate::alloc_core::segment_header::{Layout as SegLayout, SegmentKind};
 use crate::alloc_core::size_classes::SizeClasses;
 use crate::alloc_core::state_byte::StateByte;

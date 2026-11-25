@@ -389,8 +389,8 @@ pub struct AllocCore {
     ///
     /// Word 0 of the occupancy bitmask (combined slots 0..64). J14: the
     /// slots past 64 exist only in the extension sidecar, which holds their
-    /// words (`LargeCacheExtension::occ_hi`), so `AllocCore`'s size does not
-    /// change with `large-cache-adaptive`.
+    /// occupancy words (`LargeCacheExtension::occ_hi`); the feature's inline
+    /// state (the decay-config booleans) is covered by the `HeapCore` 9216-byte pin.
     #[cfg(feature = "alloc-decommit")]
     pub(in crate::alloc_core) large_cache_occupied: u64,
 
