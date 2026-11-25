@@ -1,0 +1,47 @@
+{
+  "id": "45481438423",
+  "createdAt": "2026-11-24T20:30:05Z",
+  "event": "push",
+  "headBranch": "main",
+  "headSha": "549b7def33a4bfea56aa6087b83cd6870724190f",
+  "status": "completed",
+  "conclusion": "success",
+  "selection": {
+    "mode": "all",
+    "reason": "Cargo.lock changes every build",
+    "total": 499,
+    "mapShas": [
+      "8456ab4df1041d6522323cd23e455fb8e06a7aa9",
+      "8456ab4df1041d6522323cd23e455fb8e06a7aa9"
+    ],
+    "integrity": {
+      "sourceSha256": "2b21aa6b246560e525cdce1e1a8cd229f6b46fe61ce6af91c5869136585dfb30",
+      "compactSha256": "9c4941112be952b1198bdc4328f2d7b76ff8df81fcd6ccf610172a808c744c4a",
+      "testCount": 0
+    }
+  },
+  "core": {
+    "id": "138766841117",
+    "conclusion": "success",
+    "shadow": true,
+    "rows": [
+      {
+        "name": "test ()",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (--features experimental)",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (--features alloc-core)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "coreLookup": "available",
+  "issues": [],
+  "attempt": 1,
+  "collectionCheck": "stable",
+  "evidenceAttempt": 1
+}

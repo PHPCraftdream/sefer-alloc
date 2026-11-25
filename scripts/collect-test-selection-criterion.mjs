@@ -18,6 +18,7 @@ const CORE_ABSENT = 'core job missing or ambiguous';
 const JOB_CONCLUSIONS = new Set(['action_required', 'cancelled', 'failure', 'neutral', 'skipped', 'stale', 'startup_failure', 'success', 'timed_out']);
 const MAX_BYTES = 200 * 1024;
 const PAGE_SIZE = 100;
+const ATTEMPT_JOBS_PAGE_SIZE = 30;
 const RUN_LIST_LIMIT = 1000;
 
 const idOf = value => (typeof value === 'string' && /^[0-9]+$/.test(value)) ||
@@ -53,7 +54,7 @@ function parseJson(text, message) {
   catch { throw new Error(message); }
 }
 
-function paginate(request, makeArgs, key, identity, limit = Infinity) {
+function paginate(request, makeArgs, key, identity, limit = Infinity, pageSize = PAGE_SIZE) {
   const entries = new Map();
   let expected;
   for (let page = 1; ; page++) {
@@ -62,7 +63,7 @@ function paginate(request, makeArgs, key, identity, limit = Infinity) {
       const data = parseJson(request(args), 'invalid JSON page');
       const items = data?.[key];
       const count = data?.total_count;
-      if (!Array.isArray(items) || items.length > PAGE_SIZE || !Number.isSafeInteger(count) || count < 0) {
+      if (!Array.isArray(items) || items.length > pageSize || !Number.isSafeInteger(count) || count < 0) {
         throw new Error('invalid page');
       }
       expected ??= count;
@@ -75,7 +76,7 @@ function paginate(request, makeArgs, key, identity, limit = Infinity) {
       if (invalid) throw new Error('listing changed or contained invalid/duplicate rows');
       if (entries.size >= limit) throw new Error(`listing reached GitHub’s ${limit}-result search limit`);
       if (entries.size === expected) return { entries: [...entries.values()], issue: null };
-      if (items.length < PAGE_SIZE || entries.size > expected) throw new Error('listing ended before matching total_count');
+      if (items.length < pageSize || entries.size > expected) throw new Error('listing ended before matching total_count');
     } catch (error) {
       return { entries: [...entries.values()], issue: `${key} listing incomplete: ${error.message}; ${command(args)}` };
     }
@@ -205,6 +206,117 @@ function collectJobs(record, prior, request, root, retrySelector) {
   return Boolean(selectorKnown);
 }
 
+function attemptDetail(record, attempts, n, acquire, root) {
+  const args = ['api', `${root}/runs/${record.id}/attempts/${n}`];
+  try {
+    const detail = parseJson(acquire(args), 'invalid attempt detail JSON');
+    if (idOf(detail?.id) !== record.id || detail?.run_attempt !== n || detail?.status !== 'completed' ||
+        typeof detail?.conclusion !== 'string' || !detail.conclusion.trim() ||
+        !Number.isFinite(Date.parse(detail?.created_at)) ||
+        (detail.head_sha !== undefined && detail.head_sha !== record.headSha)) {
+      throw new Error('malformed attempt detail (expected matching id, run_attempt, completed status, conclusion, created_at, and head_sha when present)');
+    }
+    attempts.set(n, { created: Date.parse(detail.created_at), detail });
+    return true;
+  } catch (error) {
+    record.issues.push(`attempt ${n} detail unavailable: ${error.message}; ${command(args)}`);
+    return false;
+  }
+}
+
+function selectorActivity(entries, from, to) {
+  let provable = true;
+  let executed = false;
+  for (const job of entries.filter(item => item?.name === SELECTOR)) {
+    const started = Date.parse(job?.started_at);
+    if (!Number.isFinite(started)) { provable = false; continue; }
+    if (started >= from && started < to) executed = true;
+  }
+  return { provable, executed };
+}
+
+function resolveRerun(record, acquire, root, repo) {
+  const snapshots = [];
+  const attempts = new Map();
+  for (let n = 1; n <= record.attempt; n++) {
+    if (!attemptDetail(record, attempts, n, acquire, root)) return { snapshots };
+  }
+  for (let n = 2; n <= record.attempt; n++) {
+    if (attempts.get(n).created <= attempts.get(n - 1).created) {
+      record.issues.push(`attempt ${n} was not created after attempt ${n - 1}; rerun attempt windows are not provable`);
+      return { snapshots };
+    }
+  }
+  const artifacts = paginate(acquire, page => ['api', `${root}/runs/${record.id}/artifacts?per_page=${PAGE_SIZE}&page=${page}`], 'artifacts', item => idOf(item?.id));
+  if (artifacts.issue) {
+    record.issues.push(artifacts.issue);
+    return { snapshots };
+  }
+  const named = artifacts.entries.filter(item => item?.name === 'test-selection');
+  const usable = named.filter(item => Number.isFinite(Date.parse(item?.created_at)));
+  if (named.length !== 1 || usable.length !== 1) {
+    record.issues.push(`test-selection artifact is missing or ambiguous for rerun (${named.length} named, ${usable.length} with a readable creation time)`);
+    return { snapshots };
+  }
+  const artifactAt = Date.parse(usable[0].created_at);
+  let source = null;
+  for (let n = 1; n < record.attempt; n++) {
+    if (artifactAt >= attempts.get(n).created && artifactAt < attempts.get(n + 1).created) source = n;
+  }
+  if (source === null) {
+    record.issues.push(`test-selection artifact created at ${usable[0].created_at} is not provably bound to a single earlier attempt`);
+    return { snapshots };
+  }
+  const jobs = new Map();
+  for (let n = 1; n <= record.attempt; n++) {
+    const listing = paginate(acquire,
+      page => ['api', `${root}/runs/${record.id}/attempts/${n}/jobs?per_page=${ATTEMPT_JOBS_PAGE_SIZE}&page=${page}`],
+      'jobs', job => idOf(job?.id), Infinity, ATTEMPT_JOBS_PAGE_SIZE);
+    if (listing.issue) {
+      record.issues.push(`attempt ${n} ${listing.issue}`);
+      return { snapshots };
+    }
+    jobs.set(n, listing.entries);
+  }
+  const latestCore = exact(jobs.get(record.attempt), CORE);
+  if (latestCore && JOB_CONCLUSIONS.has(latestCore.conclusion) && (latestCore.status === undefined || latestCore.status === 'completed')) {
+    record.core = compactCore(latestCore);
+    record.coreLookup = 'available';
+  } else record.issues.push(latestCore ? 'core job conclusion unavailable' : CORE_ABSENT);
+  const origin = exact(jobs.get(source), SELECTOR);
+  const originRun = selectorActivity(jobs.get(source), attempts.get(source).created, attempts.get(source + 1).created);
+  if (!originRun.provable || !originRun.executed || !origin || origin.status !== 'completed' || origin.conclusion !== 'success') {
+    record.issues.push(`selector job in attempt ${source} is not provably completed and successful within that attempt`);
+    return { snapshots };
+  }
+  for (let n = source + 1; n <= record.attempt; n++) {
+    const later = selectorActivity(jobs.get(n), attempts.get(n).created, n < record.attempt ? attempts.get(n + 1).created : Infinity);
+    if (!later.provable || later.executed) {
+      record.issues.push(`selector re-execution in attempt ${n} is not ruled out; the artifact selection cannot be bound to attempts after ${source}`);
+      return { snapshots };
+    }
+  }
+  if (!record.selection) collectSelection(record, acquire, repo);
+  for (let n = 1; n < record.attempt; n++) {
+    const { detail } = attempts.get(n);
+    const snapshot = {
+      id: record.id, attempt: n, createdAt: detail.created_at, event: record.event,
+      headBranch: record.headBranch, headSha: record.headSha, status: 'completed',
+      conclusion: detail.conclusion, selection: n >= source ? record.selection : null,
+      core: null, coreLookup: 'unavailable', issues: [], collectionCheck: 'stable',
+    };
+    const job = exact(jobs.get(n), CORE);
+    if (job && JOB_CONCLUSIONS.has(job.conclusion) && (job.status === undefined || job.status === 'completed')) {
+      snapshot.core = compactCore(job);
+      snapshot.coreLookup = 'available';
+    } else snapshot.issues.push(job ? 'core job conclusion unavailable' : CORE_ABSENT);
+    if (snapshot.core || snapshot.selection) snapshot.evidenceAttempt = n;
+    collectLog(snapshot, acquire, root);
+    snapshots.push(snapshot);
+  }
+  return { snapshots };
+}
+
 function savedSelection(selection) {
   if (selection == null) return null;
   try { assertSelectionIntegrity(selection); return selection; }
@@ -219,7 +331,7 @@ function evidenceAttempt(record) {
     ((record.coreLookup === "available" && record.core) || savedSelection(record.selection)) ? 1 : undefined);
 }
 
-function retainHistory(record, old, changedRun, observedRed) {
+function retainHistory(record, old, changedRun, observedRed, snapshots = []) {
   const history = [...(old?.priorAttempts ?? [])];
   let incomplete = old?.historyIncomplete === true;
   const archive = source => {
@@ -239,6 +351,7 @@ function retainHistory(record, old, changedRun, observedRed) {
   if (old?.status === 'completed' && changedRun &&
       (old.collectionCheck !== 'unstable' || old.conclusion === 'failure')) archive(old);
   if (observedRed) archive(observedRed);
+  for (const snapshot of snapshots) archive(snapshot);
   if (history.length) {
     // An API regression can return the same metadata again after an intervening state.
     // The model cannot treat that archived red as a separate attempt.
@@ -345,9 +458,6 @@ export function collect({ inputsDir = DEFAULT_INPUTS, repo = DEFAULT_REPO, call 
       if (attempt === undefined) {
         record.coreLookup = "unavailable";
         record.issues.push("attempt unknown: cannot authorize jobs or selection evidence");
-      } else if (attempt > 1) {
-        record.coreLookup = "unavailable";
-        record.issues.push("selection artifact unavailable for rerun: test-selection downloads are not attempt-scoped");
       }
       if (run.status !== "completed") record.issues.push("run not completed");
       else if (!["success", "failure"].includes(record.conclusion)) {
@@ -368,6 +478,7 @@ export function collect({ inputsDir = DEFAULT_INPUTS, repo = DEFAULT_REPO, call 
   let unstable = 0;
   for (const { path, oldText, old, record, prior, download, lookup, changedRun } of work) {
     let observedRed;
+    let rerunSnapshots = [];
     let transitioned = changedRun;
     if (lookup) {
       let acquisitionAttempted = false;
@@ -375,8 +486,18 @@ export function collect({ inputsDir = DEFAULT_INPUTS, repo = DEFAULT_REPO, call 
         acquisitionAttempted = true;
         return request(args);
       };
-      const selectorReady = collectJobs(record, prior, acquire, root, download);
-      if (download && selectorReady && !record.selection) collectSelection(record, acquire, repo);
+      if (record.attempt > 1) {
+        const cachedSelection = savedSelection(prior?.selection);
+        const cachedCore = prior?.core && JOB_CONCLUSIONS.has(prior.core.conclusion) ? structuredClone(prior.core) : null;
+        if (cachedSelection && cachedCore) {
+          record.selection = cachedSelection;
+          record.core = cachedCore;
+          record.coreLookup = 'available';
+        } else rerunSnapshots = resolveRerun(record, acquire, root, repo).snapshots;
+      } else {
+        const selectorReady = collectJobs(record, prior, acquire, root, download);
+        if (download && selectorReady && !record.selection) collectSelection(record, acquire, repo);
+      }
       collectLog(record, acquire, root);
       // A matching fresh listing is enough when all evidence came from a guarded cache.
       const { latest, issue } = acquisitionAttempted ? checkCollection(record, request, root) : { issue: null };
@@ -398,7 +519,7 @@ export function collect({ inputsDir = DEFAULT_INPUTS, repo = DEFAULT_REPO, call 
         if (record.core || record.selection) record.evidenceAttempt = record.attempt;
       }
     }
-    retainHistory(record, old, transitioned, observedRed);
+    retainHistory(record, old, transitioned, observedRed, rerunSnapshots);
     if (!listing.issue && json(record) !== oldText) writeChanged(metaPath, pendingMetadata);
     writeChanged(path, record, oldText);
   }

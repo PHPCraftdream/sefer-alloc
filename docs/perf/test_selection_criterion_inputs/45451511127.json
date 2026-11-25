@@ -4,13 +4,13 @@
   "event": "pull_request",
   "headBranch": "p128b-allocator-impl-20261124",
   "headSha": "b1f53b69d9ec30dcf565cf81b9f533daa96d45c6",
-  "status": "queued",
-  "conclusion": null,
+  "status": "completed",
+  "conclusion": "cancelled",
   "selection": null,
   "core": null,
   "coreLookup": "not-needed",
   "issues": [
-    "run not completed"
+    "run conclusion is not success or failure: cancelled"
   ],
   "attempt": 1
 }

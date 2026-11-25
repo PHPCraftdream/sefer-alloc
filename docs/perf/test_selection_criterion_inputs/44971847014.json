@@ -6,14 +6,138 @@
   "headSha": "39e59d2afe535a4132bcaddc612953d68366ab4c",
   "status": "completed",
   "conclusion": "success",
-  "selection": null,
-  "core": null,
-  "coreLookup": "unavailable",
-  "issues": [
-    "selection artifact unavailable for rerun: test-selection downloads are not attempt-scoped",
-    "jobs listing incomplete: gh call budget exhausted; gh api \"repos/PHPCraftdream/sefer-alloc/actions/runs/44971847014/attempts/3/jobs?per_page=100&page=1\"",
-    "run verification failed: gh call budget exhausted; gh api repos/PHPCraftdream/sefer-alloc/actions/runs/44971847014"
-  ],
+  "selection": {
+    "mode": "all",
+    "reason": "full run requested",
+    "total": 499,
+    "mapShas": [
+      "7eb12eee790121c109310743c0a33851698f989d",
+      "7eb12eee790121c109310743c0a33851698f989d"
+    ],
+    "integrity": {
+      "sourceSha256": "e0c0064fb162126bdbe1395a2035b4495910ab569c269152c27c87b675765ba8",
+      "compactSha256": "a05f63912b7bd80fc29203a36b09d4b8a24de2a50a3fb4bd11a84dc30f3b9e64",
+      "testCount": 0
+    }
+  },
+  "core": {
+    "id": "137089169971",
+    "conclusion": "success",
+    "shadow": true,
+    "rows": [
+      {
+        "name": "test ()",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (--features experimental)",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (--features alloc-core)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "coreLookup": "available",
+  "issues": [],
   "attempt": 3,
-  "collectionCheck": "unstable"
+  "collectionCheck": "stable",
+  "evidenceAttempt": 3,
+  "priorAttempts": [
+    {
+      "id": "44971847014",
+      "attempt": 1,
+      "createdAt": "2026-11-22T01:31:21Z",
+      "event": "push",
+      "headBranch": "main",
+      "headSha": "39e59d2afe535a4132bcaddc612953d68366ab4c",
+      "status": "completed",
+      "conclusion": "failure",
+      "selection": {
+        "mode": "all",
+        "reason": "full run requested",
+        "total": 499,
+        "mapShas": [
+          "7eb12eee790121c109310743c0a33851698f989d",
+          "7eb12eee790121c109310743c0a33851698f989d"
+        ],
+        "integrity": {
+          "sourceSha256": "e0c0064fb162126bdbe1395a2035b4495910ab569c269152c27c87b675765ba8",
+          "compactSha256": "a05f63912b7bd80fc29203a36b09d4b8a24de2a50a3fb4bd11a84dc30f3b9e64",
+          "testCount": 0
+        }
+      },
+      "core": {
+        "id": "137053335344",
+        "conclusion": "success",
+        "shadow": true,
+        "rows": [
+          {
+            "name": "test ()",
+            "conclusion": "success"
+          },
+          {
+            "name": "test (--features experimental)",
+            "conclusion": "success"
+          },
+          {
+            "name": "test (--features alloc-core)",
+            "conclusion": "success"
+          }
+        ]
+      },
+      "coreLookup": "available",
+      "issues": [],
+      "collectionCheck": "stable",
+      "evidenceAttempt": 1
+    },
+    {
+      "id": "44971847014",
+      "attempt": 2,
+      "createdAt": "2026-11-22T02:30:50Z",
+      "event": "push",
+      "headBranch": "main",
+      "headSha": "39e59d2afe535a4132bcaddc612953d68366ab4c",
+      "status": "completed",
+      "conclusion": "failure",
+      "selection": {
+        "mode": "all",
+        "reason": "full run requested",
+        "total": 499,
+        "mapShas": [
+          "7eb12eee790121c109310743c0a33851698f989d",
+          "7eb12eee790121c109310743c0a33851698f989d"
+        ],
+        "integrity": {
+          "sourceSha256": "e0c0064fb162126bdbe1395a2035b4495910ab569c269152c27c87b675765ba8",
+          "compactSha256": "a05f63912b7bd80fc29203a36b09d4b8a24de2a50a3fb4bd11a84dc30f3b9e64",
+          "testCount": 0
+        }
+      },
+      "core": {
+        "id": "137067312022",
+        "conclusion": "success",
+        "shadow": true,
+        "rows": [
+          {
+            "name": "test ()",
+            "conclusion": "success"
+          },
+          {
+            "name": "test (--features experimental)",
+            "conclusion": "success"
+          },
+          {
+            "name": "test (--features alloc-core)",
+            "conclusion": "success"
+          }
+        ]
+      },
+      "coreLookup": "available",
+      "issues": [],
+      "collectionCheck": "stable",
+      "evidenceAttempt": 2
+    }
+  ]
 }
