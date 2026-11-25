@@ -1,9 +1,11 @@
 //! Production-default regression coverage for the adaptive Large cache.
 //!
 //! The unconditional feature-linkage assertion keeps a demotion from making
-//! the behavior tests silently disappear in a `production` build.
+//! the behavior tests silently disappear in a `production` build. The file-level
+//! `internals` gate is required by the exhaustive-hook verifier; all CI rows
+//! compiling this file include `internals`.
 
-#![cfg(feature = "production")]
+#![cfg(all(feature = "production", feature = "internals"))]
 
 #[test]
 #[allow(clippy::assertions_on_constants)]
