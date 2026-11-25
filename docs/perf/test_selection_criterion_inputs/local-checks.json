@@ -130,5 +130,17 @@
   {
     "command": "node -e \"const fs=require('fs'),p='docs/perf/test_selection_criterion_inputs';let unstable=0,total=0;for(const n of fs.readdirSync(p).filter(n=>/^\\\\d+\\\\.json$/.test(n))){total++;const x=JSON.parse(fs.readFileSync(p+'/'+n,'utf8'));if(x.collectionCheck==='unstable')unstable++;}console.log(JSON.stringify({total,unstable,collection:JSON.parse(fs.readFileSync(p+'/collection.json','utf8'))},null,2));\"",
     "exitCode": 0
+  },
+  {
+    "command": "capc 10 node --test tests/test_selection_criterion.test.mjs (P1.5c rerun resolution; 31/31 passed, including subtests)",
+    "exitCode": 0
+  },
+  {
+    "command": "capc 10 node scripts/collect-test-selection-criterion.mjs (P1.5c pass with rerun resolution; 36 GitHub calls, 85 runs, listing complete)",
+    "exitCode": 0
+  },
+  {
+    "command": "capc 10 node scripts/test-selection-criterion.mjs --report (P1.5c regeneration after rerun resolution)",
+    "exitCode": 0
   }
 ]
