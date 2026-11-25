@@ -1,0 +1,47 @@
+{
+  "id": "45670851616",
+  "createdAt": "2026-11-25T18:01:32Z",
+  "event": "pull_request",
+  "headBranch": "p217a-adaptive-production-20261125",
+  "headSha": "ad9035cd85edbf9c45117fd0bb28cde0f92d2da6",
+  "status": "completed",
+  "conclusion": "failure",
+  "selection": {
+    "mode": "all",
+    "reason": "Cargo.toml changes every build",
+    "total": 500,
+    "mapShas": [
+      "4e1f0b6e46b3752f59263fb4756c6ac3e76b3c44",
+      "4e1f0b6e46b3752f59263fb4756c6ac3e76b3c44"
+    ],
+    "integrity": {
+      "sourceSha256": "c9dc2dbd3d638020cc0655f9a8799bde178078bac2c867b7d12a22f46dd0e9ff",
+      "compactSha256": "6fcd60245069cdf805496a9c25a88f86d89f354abc2ce51d599287773f11dffe",
+      "testCount": 0
+    }
+  },
+  "core": {
+    "id": "139409592515",
+    "conclusion": "success",
+    "shadow": true,
+    "rows": [
+      {
+        "name": "test ()",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (--features experimental)",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (--features alloc-core)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "coreLookup": "available",
+  "issues": [],
+  "attempt": 1,
+  "collectionCheck": "stable",
+  "evidenceAttempt": 1
+}

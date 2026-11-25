@@ -1,7 +1,7 @@
 # Test selection enforcement criterion
 
-**Verdict: INSUFFICIENT_WINDOW**
-Reason: 4 more informative runs needed (26/30).
+**Verdict: PASS**
+Reason: all criterion requirements met.
 
 Window starts at 2026-11-17T13:04:56Z (`a28be5dace7d9517f3767fa37ee15a99a06d0dde`).
 Collection: PHPCraftdream/sefer-alloc; since 2026-11-17T13:04:56Z; listing complete: yes.
@@ -28,17 +28,17 @@ Rare failure classes may be unsampled; no observed misses does not prove future 
 
 PASS applies only to the three in-scope shadow `test-core` rows: the listing must be complete, at least 30 distinct run IDs must be informative (including at least one subset), and there must be zero confirmed misses and no unresolved red or attempt evidence.
 An incomplete listing or too few informative runs yields `INSUFFICIENT_WINDOW`. Once those requirements are met, a confirmed miss yields `FAIL`; otherwise unresolved red or attempt evidence yields `INSUFFICIENT_WINDOW`. With neither a miss nor unresolved evidence, no informative subset run yields `FAIL` for lack of subset observations, not for a confirmed miss.
-Run IDs: 85 total, 26 informative, 19 uninformative, 40 excluded. Informative runs: 13 all, 13 subset. Shortfall: 4. Confirmed misses: 0. Run IDs with unresolved red evidence (latest or historical): 0; with unresolved attempt evidence: 0.
-Latest-attempt red runs (completed with conclusion `failure`): 18 total, 3 informative, 0 uninformative, 15 excluded.
-Subset share (informative subset runs / all informative runs): 13/26 (50.00%). A denominator of zero makes `0/0` undefined.
+Run IDs: 93 total, 30 informative, 22 uninformative, 41 excluded. Informative runs: 15 all, 15 subset. Shortfall: 0. Confirmed misses: 0. Run IDs with unresolved red evidence (latest or historical): 0; with unresolved attempt evidence: 0.
+Latest-attempt red runs (completed with conclusion `failure`): 20 total, 5 informative, 0 uninformative, 15 excluded.
+Subset share (informative subset runs / all informative runs): 15/30 (50.00%). A denominator of zero makes `0/0` undefined.
 
 ## Available inputs and remaining unknowns
 
 The recorded inputs are the run JSON records and the collection and local-check metadata summarized in this report. Evidence present in the run records:
 
-- Core job metadata: 66/85 (run IDs: 44089185362, 44158276248, 44162344209, 44163950491, 44209633592, 44231928052, 44279004036, 44283537386, 44284376037, 44333548131, 44365287414, 44372648408, 44385142496, 44391549769, 44406495852, 44413125392, 44415701369, 44420635488, 44422384831, 44425237119, 44427754234, 44432099149, 44452836669, 44461589898, 44465586765, 44714758483, 44731543614, 44924998245, 44930664401, 44932524760, 44932925836, 44935640390, 44940255958, 44944713269, 44947529228, 44949329243, 44951714061, 44958130975, 44963285776, 44968570097, 44971847014, 44984623077, 44988010902, 44993467356, 44996032078, 44998761865, 45010883065, 45013419517, 45018386201, 45018823350, 45021505051, 45023786014, 45382030878, 45382837859, 45382891769, 45383705515, 45386642230, 45395322110, 45402154649, 45448821550, 45451784756, 45457352165, 45459740109, 45461712475, 45470480855, 45481438423).
-- Selection artifact data: 56/85 (run IDs: 44089185362, 44158276248, 44162344209, 44163950491, 44209633592, 44231928052, 44279004036, 44283537386, 44284376037, 44333548131, 44365287414, 44372648408, 44385142496, 44391549769, 44406495852, 44413125392, 44415701369, 44420635488, 44422384831, 44425237119, 44427754234, 44432099149, 44452836669, 44461589898, 44465586765, 44714758483, 44731543614, 44924998245, 44930664401, 44932524760, 44932925836, 44935640390, 44940255958, 44944713269, 44947529228, 44949329243, 44951714061, 44958130975, 44963285776, 44968570097, 44971847014, 44984623077, 44988010902, 44993467356, 44996032078, 44998761865, 45010883065, 45013419517, 45021505051, 45023786014, 45386642230, 45395322110, 45402154649, 45457352165, 45470480855, 45481438423).
-- Reduced Cargo failure evidence: 6/85 (run IDs: 44162344209, 44209633592, 44231928052, 44425237119, 44452836669, 44951714061).
+- Core job metadata: 70/93 (run IDs: 44089185362, 44158276248, 44162344209, 44163950491, 44209633592, 44231928052, 44279004036, 44283537386, 44284376037, 44333548131, 44365287414, 44372648408, 44385142496, 44391549769, 44406495852, 44413125392, 44415701369, 44420635488, 44422384831, 44425237119, 44427754234, 44432099149, 44452836669, 44461589898, 44465586765, 44714758483, 44731543614, 44924998245, 44930664401, 44932524760, 44932925836, 44935640390, 44940255958, 44944713269, 44947529228, 44949329243, 44951714061, 44958130975, 44963285776, 44968570097, 44971847014, 44984623077, 44988010902, 44993467356, 44996032078, 44998761865, 45010883065, 45013419517, 45018386201, 45018823350, 45021505051, 45023786014, 45382030878, 45382837859, 45382891769, 45383705515, 45386642230, 45395322110, 45402154649, 45448821550, 45451784756, 45457352165, 45459740109, 45461712475, 45470480855, 45481438423, 45604684886, 45607993684, 45670851616, 45685308698).
+- Selection artifact data: 60/93 (run IDs: 44089185362, 44158276248, 44162344209, 44163950491, 44209633592, 44231928052, 44279004036, 44283537386, 44284376037, 44333548131, 44365287414, 44372648408, 44385142496, 44391549769, 44406495852, 44413125392, 44415701369, 44420635488, 44422384831, 44425237119, 44427754234, 44432099149, 44452836669, 44461589898, 44465586765, 44714758483, 44731543614, 44924998245, 44930664401, 44932524760, 44932925836, 44935640390, 44940255958, 44944713269, 44947529228, 44949329243, 44951714061, 44958130975, 44963285776, 44968570097, 44971847014, 44984623077, 44988010902, 44993467356, 44996032078, 44998761865, 45010883065, 45013419517, 45021505051, 45023786014, 45386642230, 45395322110, 45402154649, 45457352165, 45470480855, 45481438423, 45604684886, 45607993684, 45670851616, 45685308698).
+- Reduced Cargo failure evidence: 6/93 (run IDs: 44162344209, 44209633592, 44231928052, 44425237119, 44452836669, 44951714061).
 
 ### Unresolved red and attempt evidence
 
@@ -54,26 +54,28 @@ None recorded.
 
 | Category | Reason | Runs |
 | --- | --- | ---: |
-| excluded | excluded event or branch | 10 |
+| excluded | excluded event or branch | 11 |
 | excluded | full run requested | 30 |
-| informative | complete core test evidence | 23 |
-| informative | red run with complete core test evidence | 3 |
+| informative | complete core test evidence | 25 |
+| informative | red run with complete core test evidence | 5 |
 | uninformative | missing selection artifact; core shadow setup not proven skipped; core job conclusion: skipped; test (): step conclusion missing; test (--features experimental): step conclusion missing; test (--features alloc-core): step conclusion missing | 10 |
-| uninformative | run conclusion: cancelled; missing selection artifact; core job missing | 9 |
+| uninformative | run conclusion: cancelled; missing selection artifact; core job missing | 11 |
+| uninformative | run not completed; run conclusion: unknown; missing selection artifact; core job missing | 1 |
 
 ## Selection counts
 
 | Category | Selection | Artifact reason | Runs |
 | --- | --- | --- | ---: |
 | excluded | all | full run requested | 30 |
-| excluded | missing | missing | 10 |
+| excluded | missing | missing | 11 |
 | informative | all | Cargo.lock changes every build | 3 |
+| informative | all | Cargo.toml changes every build | 2 |
 | informative | all | crate change (malloc-bench-rs, once-ptr-cell, proc-memstat, proc-probe, sefer-ghost, size-classes, tagged-index-stack) reaches the root crate | 3 |
 | informative | all | fuzz/README.md is not attributable to a test | 2 |
 | informative | all | src/lib.rs is executed by no mapped test | 3 |
 | informative | all | tests/b4\_r1\_pin\_cache\_miri.rs is executed by no mapped test | 2 |
-| informative | subset | every changed file is attributed | 13 |
-| uninformative | missing | missing | 19 |
+| informative | subset | every changed file is attributed | 15 |
+| uninformative | missing | missing | 22 |
 
 ## Run evidence
 
@@ -166,6 +168,14 @@ Status and category refer to the latest attempt recorded. Evidence fields show w
 | [45461712475](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/45461712475) | 2026-11-24T18:38:30Z | push | main | bc431e1dbf7521652ce23f4118dba3555b746e11 | 1 | 1 | stable | completed | success | available | skipped | false | missing | missing | missing | — | — | — | — | uninformative | missing selection artifact; core shadow setup not proven skipped; core job conclusion: skipped; test (): step conclusion missing; test (--features experimental): step conclusion missing; test (--features alloc-core): step conclusion missing | None observed | selector job conclusion: skipped |
 | [45470480855](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/45470480855) | 2026-11-24T19:27:56Z | pull\_request | p128b-allocator-impl-20261124 | 0a2ea3416542f6ca0a17209e2df4a433205beb80 | 1 | 1 | stable | completed | success | available | success | true | success | success | success | all | 499 / 499 | Cargo.lock changes every build | — | informative | complete core test evidence | None observed | None recorded |
 | [45481438423](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/45481438423) | 2026-11-24T20:30:05Z | push | main | 549b7def33a4bfea56aa6087b83cd6870724190f | 1 | 1 | stable | completed | success | available | success | true | success | success | success | all | 499 / 499 | Cargo.lock changes every build | — | informative | complete core test evidence | None observed | None recorded |
+| [45604684886](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/45604684886) | 2026-11-25T11:27:57Z | pull\_request | p195d-test-selection-20261125 | 4b9df70335315aa12edf370220c5804b8cb537e8 | 1 | 1 | stable | completed | success | available | success | true | success | success | success | subset | 199 / 499 | every changed file is attributed | — | informative | complete core test evidence | None observed | None recorded |
+| [45607993684](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/45607993684) | 2026-11-25T11:49:31Z | push | main | 4e1f0b6e46b3752f59263fb4756c6ac3e76b3c44 | 1 | 1 | stable | completed | success | available | success | true | success | success | success | subset | 199 / 499 | every changed file is attributed | — | informative | complete core test evidence | None observed | None recorded |
+| [45611818224](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/45611818224) | 2026-11-25T12:14:12Z | schedule | main | 4e1f0b6e46b3752f59263fb4756c6ac3e76b3c44 | 1 | 1 (legacy) | — | completed | cancelled | not-needed | — | — | missing | missing | missing | — | — | — | — | excluded | excluded event or branch | None observed | excluded event or branch |
+| [45665891550](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/45665891550) | 2026-11-25T17:32:45Z | pull\_request | p217a-adaptive-production-20261125 | 8390fee6c7dcc90ff9eacd77ea22c4004871f3f6 | 1 | 1 (legacy) | — | completed | cancelled | not-needed | — | — | missing | missing | missing | — | — | — | — | uninformative | run conclusion: cancelled; missing selection artifact; core job missing | None observed | run conclusion is not success or failure: cancelled |
+| [45670661633](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/45670661633) | 2026-11-25T18:00:29Z | pull\_request | p217a-adaptive-production-20261125 | 129a0581a1f483e927d0f6d6e5ce58002045200f | 1 | 1 (legacy) | — | completed | cancelled | not-needed | — | — | missing | missing | missing | — | — | — | — | uninformative | run conclusion: cancelled; missing selection artifact; core job missing | None observed | run conclusion is not success or failure: cancelled |
+| [45670851616](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/45670851616) | 2026-11-25T18:01:32Z | pull\_request | p217a-adaptive-production-20261125 | ad9035cd85edbf9c45117fd0bb28cde0f92d2da6 | 1 | 1 | stable | completed | failure | available | success | true | success | success | success | all | 500 / 500 | Cargo.toml changes every build | — | informative | red run with complete core test evidence | None observed | None recorded |
+| [45685308698](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/45685308698) | 2026-11-25T19:27:02Z | pull\_request | p217a-adaptive-production-20261125 | 42f621613fe73d5149fb2d26c5d2b372ea9e3ce0 | 1 | 1 | stable | completed | failure | available | success | true | success | success | success | all | 500 / 500 | Cargo.toml changes every build | — | informative | red run with complete core test evidence | None observed | None recorded |
+| [45690762180](https://github.com/PHPCraftdream/sefer-alloc/actions/runs/45690762180) | 2026-11-25T20:00:40Z | pull\_request | p217a-adaptive-production-20261125 | 045fbaf50f84298b48b9327f1e3a238a40451988 | 1 | 1 (legacy) | — | in\_progress | — | not-needed | — | — | missing | missing | missing | — | — | — | — | uninformative | run not completed; run conclusion: unknown; missing selection artifact; core job missing | None observed | run not completed |
 
 ## Observed misses
 
@@ -233,3 +243,6 @@ node scripts/test-selection-criterion.mjs --check
 | capc 10 node --test tests/test\_selection\_criterion.test.mjs (P1.5c rerun resolution; 31/31 passed, including subtests) | 0 |
 | capc 10 node scripts/collect-test-selection-criterion.mjs (P1.5c pass with rerun resolution; 36 GitHub calls, 85 runs, listing complete) | 0 |
 | capc 10 node scripts/test-selection-criterion.mjs --report (P1.5c regeneration after rerun resolution) | 0 |
+| capc 10 node scripts/collect-test-selection-criterion.mjs (P1.5c window refresh on main 4e1f0b6e; 33 GitHub calls, 93 runs, listing complete) | 0 |
+| capc 10 node scripts/test-selection-criterion.mjs --report (P1.5c window refresh; verdict PASS) | 0 |
+| capc 10 node scripts/test-selection-criterion.mjs --check (P1.5c window refresh) | 0 |

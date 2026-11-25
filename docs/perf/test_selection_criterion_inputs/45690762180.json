@@ -1,0 +1,16 @@
+{
+  "id": "45690762180",
+  "createdAt": "2026-11-25T20:00:40Z",
+  "event": "pull_request",
+  "headBranch": "p217a-adaptive-production-20261125",
+  "headSha": "045fbaf50f84298b48b9327f1e3a238a40451988",
+  "status": "in_progress",
+  "conclusion": null,
+  "selection": null,
+  "core": null,
+  "coreLookup": "not-needed",
+  "issues": [
+    "run not completed"
+  ],
+  "attempt": 1
+}
