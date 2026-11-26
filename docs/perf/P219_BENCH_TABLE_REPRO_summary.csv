@@ -1,0 +1,49 @@
+group,size,allocator,ns_run1,ns_run2,run2_over_run1
+"Warm repeated bulk burst",16B,SeferAlloc,4.9,44.5,9.082
+"Warm repeated bulk burst",16B,mimalloc,42.5,6,0.141
+"Warm repeated bulk burst",16B,System,78,67.6,0.867
+"Warm repeated bulk burst",64B,SeferAlloc,38,37.9,0.997
+"Warm repeated bulk burst",64B,mimalloc,7.6,69.6,9.158
+"Warm repeated bulk burst",64B,System,677.8,697,1.028
+"Warm repeated bulk burst",256B,SeferAlloc,44.8,38.9,0.868
+"Warm repeated bulk burst",256B,mimalloc,11.4,13.7,1.202
+"Warm repeated bulk burst",256B,System,565.7,695.2,1.229
+"Warm repeated bulk burst",1024B,SeferAlloc,68.5,9.2,0.134
+"Warm repeated bulk burst",1024B,mimalloc,25.4,23.1,0.909
+"Warm repeated bulk burst",1024B,System,146.8,749,5.102
+"Churn, non-writing",16B,SeferAlloc,4.7,6,1.277
+"Churn, non-writing",16B,mimalloc,92.1,8.9,0.097
+"Churn, non-writing",16B,System,85.3,689.3,8.081
+"Churn, non-writing",64B,SeferAlloc,5.9,7.6,1.288
+"Churn, non-writing",64B,mimalloc,71.4,11.7,0.164
+"Churn, non-writing",64B,System,61.2,48.3,0.789
+"Churn, non-writing",256B,SeferAlloc,5.5,6.3,1.145
+"Churn, non-writing",256B,mimalloc,45,15.2,0.338
+"Churn, non-writing",256B,System,66.1,734,11.104
+"Churn, non-writing",1024B,SeferAlloc,5.9,9.5,1.610
+"Churn, non-writing",1024B,mimalloc,632.5,721.6,1.141
+"Churn, non-writing",1024B,System,59.3,490.1,8.265
+"Churn + write",16B,SeferAlloc,87.2,16,0.183
+"Churn + write",16B,mimalloc,11.9,80.2,6.739
+"Churn + write",16B,System,185.8,161.7,0.870
+"Churn + write",64B,SeferAlloc,9.2,86.8,9.435
+"Churn + write",64B,mimalloc,24.8,187.9,7.577
+"Churn + write",64B,System,734.5,445.6,0.607
+"Churn + write",256B,SeferAlloc,16.8,7.5,0.446
+"Churn + write",256B,mimalloc,215.8,122.3,0.567
+"Churn + write",256B,System,1003.3,60.7,0.061
+"Churn + write",1024B,SeferAlloc,335.6,9,0.027
+"Churn + write",1024B,mimalloc,252.1,572.6,2.271
+"Churn + write",1024B,System,239.4,91.1,0.381
+"Churn + teardown",16B,SeferAlloc,87.1,6.2,0.071
+"Churn + teardown",16B,mimalloc,72.9,12.9,0.177
+"Churn + teardown",16B,System,1451.1,57.2,0.039
+"Churn + teardown",64B,SeferAlloc,79.3,8.2,0.103
+"Churn + teardown",64B,mimalloc,12.5,172.8,13.824
+"Churn + teardown",64B,System,116.8,1371.2,11.740
+"Churn + teardown",256B,SeferAlloc,15.1,103,6.821
+"Churn + teardown",256B,mimalloc,15,12.8,0.853
+"Churn + teardown",256B,System,73.4,748.5,10.198
+"Churn + teardown",1024B,SeferAlloc,9.3,119.3,12.828
+"Churn + teardown",1024B,mimalloc,343.7,38.1,0.111
+"Churn + teardown",1024B,System,87.6,84,0.959

@@ -1296,6 +1296,15 @@ as "SeferAlloc vs mimalloc/System, this run", not as "SeferAlloc got slower
 since the last table." vs `System`: ~4–7× faster across the board, same
 shape as before.)
 
+**Not refreshed at `d5e89119` (#219, 2026-11-26).** Two full `npm run bench:table` runs at `origin/main`
+`d5e89119` (`large-cache-adaptive` in `production`) under a 10 % CPU cap
+(`docs/perf/_raw_p219_bench_table_run1.log`, `docs/perf/_raw_p219_bench_table_run2.log`) do not reproduce each other: in the four canonical sized groups
+30 of 48 cells differ by more than 2× between the runs (largest 37.3×, Churn + write 1024B SeferAlloc; e.g.
+mimalloc warm bulk burst 16B 42.5 → 6.0 ns, SeferAlloc churn + write 16B
+87.2 → 16.0 ns; per-cell list `docs/perf/P219_BENCH_TABLE_REPRO_summary.csv`). The tables above
+therefore stay at their NL-9 values. The deterministic refresh for `d5e89119` is the `#219` section of
+`docs/perf/IAI_BASELINE.md`.
+
 ### Paired short-sample table (`npm run bench:table:paired`)
 
 The criterion table above measures each allocator in its own long window, so host
