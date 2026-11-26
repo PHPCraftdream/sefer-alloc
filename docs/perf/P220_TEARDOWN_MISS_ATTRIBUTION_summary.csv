@@ -1,0 +1,116 @@
+section,scenario_or_arm,key,value
+ab_ratio,growmix,cpu:v1/base,1.0894;0.9861;1.2035
+ab_ratio,growmix,cpu:v3/base,1.0260;0.9398;1.1201
+ab_ratio,growmix,cpu:base/mi,1.2149;1.0916;1.3522
+ab_ratio,growmix,user:v1/base,1.1638;1.0192;1.3290
+ab_ratio,growmix,user:v3/base,1.0965;0.9767;1.2310
+ab_ratio,growmix,user:base/mi,1.3776;1.2171;1.5593
+ab_ratio,growmix,kernel:v1/base,0.9603;0.8764;1.0523
+ab_ratio,growmix,kernel:v3/base,0.8636;0.7295;1.0225
+ab_ratio,growmix,kernel:base/mi,1.1357;0.9794;1.3168
+ab_ratio,growmix,wall:v1/base,1.0341;0.9215;1.1603
+ab_ratio,growmix,wall:v3/base,1.0012;0.9066;1.1056
+ab_ratio,growmix,wall:base/mi,1.2713;1.1584;1.3953
+ab_ratio,regrow,cpu:v1/base,0.9419;0.8577;1.0343
+ab_ratio,regrow,cpu:v3/base,0.9578;0.8730;1.0509
+ab_ratio,regrow,cpu:base/mi,1.2902;1.1771;1.4142
+ab_ratio,regrow,user:v1/base,0.9607;0.8027;1.1497
+ab_ratio,regrow,user:v3/base,0.9590;0.8158;1.1274
+ab_ratio,regrow,user:base/mi,1.0891;0.8846;1.3410
+ab_ratio,regrow,kernel:v1/base,0.9341;0.8121;1.0745
+ab_ratio,regrow,kernel:v3/base,1.0257;0.9323;1.1284
+ab_ratio,regrow,kernel:base/mi,1.4531;1.2230;1.7266
+ab_ratio,regrow,wall:v1/base,0.9463;0.8199;1.0922
+ab_ratio,regrow,wall:v3/base,0.9663;0.8717;1.0712
+ab_ratio,regrow,wall:base/mi,1.3340;1.1690;1.5223
+ab_ratio,wild,cpu:v1/base,1.0879;1.0156;1.1653
+ab_ratio,wild,cpu:v3/base,1.0337;0.9605;1.1125
+ab_ratio,wild,cpu:base/mi,1.2729;1.1608;1.3959
+ab_ratio,wild,user:v1/base,1.1094;1.0374;1.1864
+ab_ratio,wild,user:v3/base,1.0363;0.9659;1.1119
+ab_ratio,wild,user:base/mi,1.2548;1.1523;1.3665
+ab_ratio,wild,wall:v1/base,1.0715;0.9423;1.2185
+ab_ratio,wild,wall:v3/base,1.1565;0.9840;1.3592
+ab_ratio,wild,wall:base/mi,1.1985;1.0416;1.3791
+cpu_share,growmix:base,cpu_over_wall,0.146
+cpu_share,growmix:mi,cpu_over_wall,0.153
+cpu_share,regrow:base,cpu_over_wall,0.140
+cpu_share,regrow:mi,cpu_over_wall,0.151
+cpu_share,wild:base,cpu_over_wall,0.149
+cpu_share,wild:mi,cpu_over_wall,0.174
+cachesim_category,sefer,judge:Ir,57342931
+cachesim_category,sefer,judge:D1mr,7288
+cachesim_category,sefer,judge:D1mw,61
+cachesim_category,sefer,judge:DLmr,10
+cachesim_category,sefer,judge:DLmw,5
+cachesim_category,sefer,sefer:Ir,93132992
+cachesim_category,sefer,sefer:D1mr,359365
+cachesim_category,sefer,sefer:D1mw,23174
+cachesim_category,sefer,sefer:DLmr,269391
+cachesim_category,sefer,sefer:DLmw,274
+cachesim_category,sefer,mimalloc:Ir,129448
+cachesim_category,sefer,mimalloc:D1mr,233
+cachesim_category,sefer,mimalloc:D1mw,22
+cachesim_category,sefer,mimalloc:DLmr,191
+cachesim_category,sefer,mimalloc:DLmw,11
+cachesim_category,sefer,std (inlined):Ir,53895965
+cachesim_category,sefer,std (inlined):D1mr,1961785
+cachesim_category,sefer,std (inlined):D1mw,1108074
+cachesim_category,sefer,std (inlined):DLmr,1337735
+cachesim_category,sefer,std (inlined):DLmw,906100
+cachesim_category,sefer,other:Ir,27476403
+cachesim_category,sefer,other:D1mr,117200
+cachesim_category,sefer,other:D1mw,53097
+cachesim_category,sefer,other:DLmr,6537
+cachesim_category,sefer,other:DLmw,43320
+cachesim_total,sefer,Ir,231977739
+cachesim_total,sefer,D1mr,2445871
+cachesim_total,sefer,D1mw,1184428
+cachesim_total,sefer,DLmr,1613864
+cachesim_total,sefer,DLmw,949710
+cachesim_category,mi,judge:Ir,56653571
+cachesim_category,mi,judge:D1mr,24
+cachesim_category,mi,judge:D1mw,12
+cachesim_category,mi,judge:DLmr,9
+cachesim_category,mi,judge:DLmw,7
+cachesim_category,mi,sefer:Ir,1404
+cachesim_category,mi,sefer:D1mr,0
+cachesim_category,mi,sefer:D1mw,0
+cachesim_category,mi,sefer:DLmr,0
+cachesim_category,mi,sefer:DLmw,0
+cachesim_category,mi,mimalloc:Ir,82416731
+cachesim_category,mi,mimalloc:D1mr,779804
+cachesim_category,mi,mimalloc:D1mw,353979
+cachesim_category,mi,mimalloc:DLmr,3885
+cachesim_category,mi,mimalloc:DLmw,334979
+cachesim_category,mi,std (inlined):Ir,23084291
+cachesim_category,mi,std (inlined):D1mr,896148
+cachesim_category,mi,std (inlined):D1mw,364823
+cachesim_category,mi,std (inlined):DLmr,285152
+cachesim_category,mi,std (inlined):DLmw,328746
+cachesim_category,mi,other:Ir,22286175
+cachesim_category,mi,other:D1mr,11379
+cachesim_category,mi,other:D1mw,12361
+cachesim_category,mi,other:DLmr,2139
+cachesim_category,mi,other:DLmw,11760
+cachesim_total,mi,Ir,184442172
+cachesim_total,mi,D1mr,1687355
+cachesim_total,mi,D1mw,731175
+cachesim_total,mi,DLmr,291185
+cachesim_total,mi,DLmw,675492
+cachesim_fn,sefer,"<sefer_alloc_core::alloc_core::alloc_core::alloc_core_impl::AllocCore>::flush_class_internal",617224;2947;663548
+cachesim_fn,sefer,"<g1_wild_judge::Run>::alloc",2;556639;6913
+cachesim_fn,sefer,"<g1_wild_judge::Run>::free",286921;0;365401
+cachesim_fn,sefer,"<sefer_alloc_core::alloc_core::alloc_core::alloc_core_impl::AllocCore>::find_segment_with_free_impl",268678;0;309070
+cachesim_fn,sefer,"sefer_registry::registry::heap_core::free::dealloc_fast::lane_miss",262772;0;302072
+cachesim_fn,sefer,"<sefer_segment::segment::remote_bitmap::sidecar_bitmap::leaf_classes::ClassLeaves>::promote",46;253963;682
+cachesim_fn,sefer,"g1_wild_judge::main",66550;91389;439696
+cachesim_fn,sefer,"sefer_registry::registry::heap_core::free::dealloc_fast::lane_second_chance",43970;0;52325
+cachesim_fn,mi,"mi_page_free_list_extend",0;333880;0
+cachesim_fn,mi,"<g1_wild_judge::Run>::free",243485;1;365447
+cachesim_fn,mi,"<g1_wild_judge::Run>::alloc",0;237361;4
+cachesim_fn,mi,"g1_wild_judge::main",30434;91377;439267
+cachesim_fn,mi,"g1_wild_judge::free_all",11175;2;91340
+cachesim_fn,mi,"mi_arenas_page_alloc_fresh",0;8499;1037
+cachesim_fn,mi,"__memcpy_avx_unaligned_erms",4;2051;2057
+cachesim_fn,mi,"mi_free",1979;0;572348

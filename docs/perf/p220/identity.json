@@ -1,0 +1,35 @@
+{
+  "base_commit_sha": "d5e89119d32148f016539a31f0e1ba189a36c235",
+  "xperf_trace1": {
+    "file": "p220.etl (not committed, 1.18 GB)",
+    "sha256": "0da300f5885e12962ff35000f67ae9ec008c028a3fd01e11fa2fb2f076ac3d26",
+    "providers": "PROC_THREAD+LOADER+PROFILE -stackwalk Profile",
+    "interval_ms": 0.1221,
+    "binary": "production build of examples/g1_wild_judge.rs (P218 base timing binary)",
+    "binary_sha256": "39f1f9497cff7a7c9815507ef5ccb75090e25444e49cf494876dd683b3e46e54",
+    "runs": "growmix sefer, growmix mi, regrow sefer, regrow mi; seed 1 scale 1; capc 10"
+  },
+  "xperf_trace2": {
+    "file": "p220b.etl (not committed, 117 MB)",
+    "sha256": "f73183f7c4041cd35ab7219ddad5b5072e74c7f8a8c7248903b2dc53c797de44",
+    "providers": "PROC_THREAD+LOADER+PROFILE",
+    "interval_ms": 0.1221,
+    "binary": "same source, CARGO_PROFILE_RELEASE_DEBUG=line-tables-only, --features production",
+    "binary_sha256": "e37d9939a41e3c26bbac3cda58ec1860d6c015e54d6ee52136549e28a09b65a8",
+    "runs": "growmix sefer, growmix mi; seed 1 scale 1; capc 10",
+    "analysis": "xperf -i p220b.etl -a dumper; node xperf_lines.mjs <dump> <judge.exe> <outdir> (llvm-symbolizer --inlines --relative-address)"
+  },
+  "cachesim": {
+    "script": "cachesim.sh",
+    "ident": "cg_ident.txt",
+    "tool": "valgrind --tool=callgrind --cache-sim=yes --dump-line=yes",
+    "scenario": "growmix seed 1 scale 0.25",
+    "host": "WSL2 on the same Windows host, CARGO_BUILD_JOBS=2"
+  },
+  "host": {
+    "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz x16",
+    "os": "Windows 10 Pro 10.0.19045 x64",
+    "rustc_windows": "rustc 1.97.0 (2d8144b78 2026-07-07)"
+  },
+  "pmc": "xperf -pmcprofile LLCMisses failed with \"Failed to configure counters\" (hardware counters unavailable to xperf on this host)"
+}
