@@ -1,0 +1,16 @@
+scenario,pair,ratio_geomean,ci95_lo,ci95_hi,verdict,blocks,repeats
+growmix,v1/base,1.0341,0.9215,1.1603,tie,12,3
+growmix,v3/base,1.0012,0.9066,1.1056,tie,12,3
+growmix,base/mi,1.2713,1.1584,1.3953,slower,12,3
+growmix,v1/mi,1.3146,1.1813,1.4629,slower,12,3
+growmix,v3/mi,1.2728,1.1560,1.4014,slower,12,3
+regrow,v1/base,0.9463,0.8199,1.0922,tie,12,3
+regrow,v3/base,0.9663,0.8717,1.0712,tie,12,3
+regrow,base/mi,1.3340,1.1690,1.5223,slower,12,3
+regrow,v1/mi,1.2624,1.1427,1.3945,slower,12,3
+regrow,v3/mi,1.2890,1.2125,1.3703,slower,12,3
+wild,v1/base,1.0715,0.9423,1.2185,tie,12,3
+wild,v3/base,1.1565,0.9840,1.3592,tie,12,3
+wild,base/mi,1.1985,1.0416,1.3791,slower,12,3
+wild,v1/mi,1.2842,1.1523,1.4313,slower,12,3
+wild,v3/mi,1.3861,1.2164,1.5794,slower,12,3
