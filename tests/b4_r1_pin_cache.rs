@@ -103,6 +103,25 @@ fn quiescent_leaf_balance() -> (usize, usize) {
     last
 }
 
+/// Sidecar backing releases (VM span + System fallback), once they stop moving.
+/// Frees are deferred past the last-pin release, hence the bounded wait.
+fn quiescent_sidecar_releases() -> usize {
+    let releases = || {
+        let (_, vm_freed, _, heap_freed) = SmallSidecar::sidecar_backing_counts_for_test();
+        vm_freed + heap_freed
+    };
+    let mut last = releases();
+    for _ in 0..10_000 {
+        thread::sleep(Duration::from_micros(200));
+        let next = releases();
+        if next == last {
+            return next;
+        }
+        last = next;
+    }
+    last
+}
+
 /// Oracle limits of the System-leaf totals (documented per the round-2
 /// review): the counters also record VARIABLE-size remote-bitmap leaf
 /// allocations that legitimately grow/shrink with segment churn, so exact
@@ -679,7 +698,9 @@ fn thread_exit_releases_cached_pins_and_balances() {
             );
         }
         // All fixture routes, registrations, reservations and probes exist before this baseline.
-        let fixture_leaf0 = quiescent_leaf_balance();
+        // Task #223: a sidecar is no longer a System allocation, so its free is
+        // counted by the backing release counters (VM span or System fallback).
+        let releases0 = quiescent_sidecar_releases();
         for start in starts {
             start.send(()).expect("worker gone before start");
         }
@@ -696,25 +717,16 @@ fn thread_exit_releases_cached_pins_and_balances() {
             }
         }
         drop(worker_reports);
-        let fixture_leaf1 = quiescent_leaf_balance();
-        let final_count = fixture_leaf1.1;
+        let releases1 = quiescent_sidecar_releases();
+        let final_count = releases1 - releases0;
         // The leak side stays tight: at most 16 of the 64 expected frees may be missing. The
         // excess side is wider: lazy frees of PRECEDING tests' pairs land inside this window
         // (main b8e02af9 -> 3fa9f746: 82 frees where 64 were expected), so up to 64 extra
         // frees are accepted; a mass free of this test's own pairs is caught by the refs and
         // counter oracles around it.
-        let expected_final = fixture_leaf0.1.saturating_sub(64);
         assert!(
-            final_count <= expected_final + 16 && final_count + 64 >= expected_final,
-            "expected 64 sidecar frees (16 missing or 64 extra tolerated), baseline {:?}, final {:?}",
-            fixture_leaf0,
-            fixture_leaf1
-        );
-        assert!(
-            fixture_leaf1.0 < fixture_leaf0.0,
-            "expected sidecar bytes to decrease, baseline {:?}, final {:?}",
-            fixture_leaf0,
-            fixture_leaf1
+            final_count + 16 >= 64 && final_count <= 64 + 64,
+            "expected 64 sidecar releases (16 missing or 64 extra tolerated), baseline {releases0}, final {releases1}"
         );
     });
 }

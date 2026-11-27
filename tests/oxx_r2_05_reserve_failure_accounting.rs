@@ -39,7 +39,8 @@
 //! `ALLOWLIST` below) whose body demonstrably increments
 //! `SEGMENTS_RESERVE_FAILED_TOTAL` — except the one call site that is
 //! legitimately NOT a segment reservation at all (`AccountedSidecar::reserve`,
-//! sidecar VM, tracked by a different counter family) and is allowlisted
+//! sidecar VM, and `reserve_zeroed_span`, the SmallSidecar backing span; both
+//! are tracked by separate sidecar backing counters) and are allowlisted
 //! with `requires_failed_counter: false` instead.
 //!
 //! **Counterfactual proof (see task notes / commit message for the exact
@@ -128,6 +129,12 @@ const ALLOWLIST: &[Allow] = &[
         func: "reserve_depot_overflow",
         requires_failed_counter: false,
         note: "G1-K7 depot-overflow record storage is NOT a segment reservation; a refusal leaves the overflow off and is counted by DepotOverflow::stats.os_refusals",
+    },
+    Allow {
+        file: "crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar_backing.rs",
+        func: "reserve_zeroed_span",
+        requires_failed_counter: false,
+        note: "SmallSidecar's ~40 KiB backing span is NOT a segment-pool reservation; refusal falls back to System.alloc and is tracked by sidecar backing counters, never SEGMENTS_RESERVE_FAILED_TOTAL",
     },
 ];
 

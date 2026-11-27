@@ -4,7 +4,6 @@
     feature = "bench-internals"
 ))]
 
-use core::mem::size_of;
 use sefer_alloc::registry::segment_route::{RouteDirectory, RouteKind, SmallSidecar};
 use std::sync::Mutex;
 
@@ -26,11 +25,12 @@ fn actual_system_requests_spills_failure_retry_and_last_pin_release() {
     let sidecar = route.small_sidecar().unwrap();
     assert_eq!(directory.live_route_census_for_test(), (1, 0, 0));
     let base = SmallSidecar::system_totals_for_test();
-    // SmallSidecar size: pending (4096 × 8 B) + ClassLeaves mixed pointers
-    // (1024 × 8 B) + presence bitmap (16 × 8 B).
-    assert_eq!(base.0 - before.0, size_of::<SmallSidecar>());
-    assert_eq!(base.1 - before.1, 0); // R6-T40 OPT-04: unzeroed System storage.
-    assert_eq!(base.3 - before.3, 1);
+    // Task #223: the sidecar backing is the OS-zeroed VM span — NO System
+    // request at all at registration (the historical path allocated the
+    // full size in one unzeroed System call).
+    assert_eq!(base.0 - before.0, 0);
+    assert_eq!(base.1 - before.1, 0);
+    assert_eq!(base.3 - before.3, 0);
     assert_eq!(sidecar.mixed_leaves_for_test(), 0);
 
     for (offset, class) in [(0, 0), (16, 0), (LEAF as u32, 0)] {
@@ -82,7 +82,7 @@ fn actual_system_requests_spills_failure_retry_and_last_pin_release() {
     assert!(directory.lookup(root).is_none());
     assert_eq!(directory.live_route_census_for_test(), (0, 0, 0));
     let held = SmallSidecar::system_totals_for_test();
-    assert_eq!(held.0 - before.0, size_of::<SmallSidecar>() + 3 * 256);
+    assert_eq!(held.0 - before.0, 3 * 256);
     assert_eq!(held.2 - before.2, 0);
     let replacement =
         unsafe { directory.register(root, SEGMENT, root, 11, RouteKind::Small) }.unwrap();
@@ -140,9 +140,9 @@ fn adversarial_all_mixed_real_route_has_no_universal_small_budget() {
     drop(scan);
     assert_eq!(sidecar.mixed_leaves_for_test(), LEAVES);
     let live = SmallSidecar::system_totals_for_test();
-    assert_eq!(live.0 - before.0, size_of::<SmallSidecar>() + LEAVES * 256);
+    assert_eq!(live.0 - before.0, LEAVES * 256);
     assert_eq!(live.1 - before.1, 0);
-    assert_eq!(live.3 - before.3, 1 + LEAVES);
+    assert_eq!(live.3 - before.3, LEAVES);
     drop(route);
     assert_eq!(directory.live_route_census_for_test(), (0, 0, 0));
     drop(reservation);

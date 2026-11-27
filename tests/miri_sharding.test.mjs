@@ -159,7 +159,9 @@ test('fixture: schema, ref, sources and expected record counts (40/4/6)', () => 
   }
   assert.equal(fixture.records['miri-core'].length, 40);
   assert.equal(fixture.records['miri-fastbin'].length, 4);
-  assert.equal(fixture.records['miri-plain'].length, 6);
+  // Task #223: +1 record for the p223_small_sidecar_zero_free_backing
+  // miri-plain-rest target added to both fixture and CI (equivalence kept).
+  assert.equal(fixture.records['miri-plain'].length, 7);
 });
 
 test('green: post-commit tree — old jobs absent, shards compared against fixture', () => {

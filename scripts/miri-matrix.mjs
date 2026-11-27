@@ -129,8 +129,14 @@ export const MIRI_TARGETS = [
   // plain target and gets its own shard; the rest of the plain suite
   // (including the ~8s large free/no-leak regression) is the other shard.
   green('miri-plain-heavy', 'b4_r1_pin_cache_miri', plainFeatures, { model: 'plain' }),
+  // Task #223: the sidecar zero-fill/free-backing oracle has a miri-reduced
+  // mode (checked budget) and MUST run under miri: only miri exercises the
+  // `explicit_zero_fill_words` fill path of the VM-span backend (the miri
+  // allocator is System-backed and does not hand back zeroed bytes).
   ...['regression_xthread_large_free_no_leak', 'regression_xthread_thread_free_alias_miri', 'regression_xthread_small_ring_miri']
     .map((test) => green('miri-plain-rest', test, plainFeatures, { model: 'plain' })),
+  green('miri-plain-rest', 'p223_small_sidecar_zero_free_backing',
+    `production ${plainFeatures}`, { model: 'plain' }),
   // b4-r1 round 2 (P2): the same cell under narrow provenance — REAL Box
   // ownership transported via a Send wrapper, cache-hit activation oracle
   // (hits delta >= 1 reds a "publish_cached always Miss" mutant), gated
