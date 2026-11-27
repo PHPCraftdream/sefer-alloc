@@ -41,6 +41,8 @@ mod route_scan;
 mod shard_lock;
 #[path = "route_state/small_sidecar.rs"]
 mod small_sidecar;
+#[path = "route_state/small_sidecar_backing.rs"]
+mod small_sidecar_backing;
 #[cfg(all(miri, feature = "internals", feature = "bench-internals"))]
 #[path = "route_protocol/terminal_publication_gate.rs"]
 mod terminal_publication_gate;

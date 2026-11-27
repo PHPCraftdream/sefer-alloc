@@ -59,20 +59,14 @@ impl EntryHandle {
     ) -> Result<Self, RouteError> {
         let sidecar = match kind {
             RouteKind::Small | RouteKind::Primordial => {
-                // SAFETY: System is independent of the installed allocator; the
-                // span stays private until `initialize_at` builds every atomic.
-                let ptr = unsafe { System.alloc(Layout::new::<SmallSidecar>()) };
-                if !ptr.is_null() {
-                    #[cfg(feature = "internals")]
-                    crate::alloc_core::remote_bitmap::ClassLeaves::record_alloc(
-                        Layout::new::<SmallSidecar>().size(),
-                        false,
-                    );
-                    // SAFETY: fresh private storage has SmallSidecar's exact
-                    // layout; in-place construction initializes every atomic.
-                    unsafe { SmallSidecar::initialize_at(ptr.cast()) };
-                }
-                ptr
+                // Task #223: OS-zeroed VM span when available — the
+                // all-zero valid initial state comes from the OS, no
+                // userspace zero-fill of the ~40 KiB sidecar runs. The
+                // `System` fallback (reservation OOM, cfg-gated verification builds) uses
+                // `initialize_at` and records its own System accounting.
+                // Null only when BOTH backends refused: the historical
+                // `RouteError::OutOfMemory` behavior is unchanged.
+                SmallSidecar::allocate()
             }
             RouteKind::Large => {
                 // SAFETY: System returns a properly aligned allocation for
@@ -124,16 +118,22 @@ impl EntryHandle {
     fn free_sidecar(kind: RouteKind, sidecar: *mut u8) {
         match kind {
             RouteKind::Small | RouteKind::Primordial => {
-                // SAFETY: pointer is a fully initialized SmallSidecar from
-                // System; last-pin release ensures no remaining reference.
-                unsafe { ptr::drop_in_place(sidecar.cast::<SmallSidecar>()) };
-                #[cfg(feature = "internals")]
-                crate::alloc_core::remote_bitmap::ClassLeaves::record_free(
-                    Layout::new::<SmallSidecar>().size(),
-                );
-                // SAFETY: pointer came from System.alloc with this Layout
-                // and its mixed leaves were released by Drop above.
-                unsafe { System.dealloc(sidecar, Layout::new::<SmallSidecar>()) };
+                let sidecar = sidecar.cast::<SmallSidecar>();
+                // SAFETY: pointer is a fully initialized SmallSidecar;
+                // last-pin release ensures no remaining reference, so the
+                // backing tag is moved out exactly once before the payload
+                // drop runs.
+                let backing = unsafe { SmallSidecar::take_backing(sidecar) };
+                // SAFETY: pointer is a fully initialized SmallSidecar with no
+                // remaining reference; its payload drop (`Drop for
+                // SmallSidecar`) releases only the promoted-leaf chunks and
+                // never touches the backing storage.
+                unsafe { ptr::drop_in_place(sidecar) };
+                // Storage release runs only AFTER the payload drop returned:
+                // no reference into the storage is live here. (munmap for
+                // Vmem, `System.dealloc` + `record_free` for System;
+                // `take_backing`'s return value is released exactly once.)
+                SmallSidecar::release_taken_backing(backing, sidecar.cast::<u8>());
             }
             RouteKind::Large => {
                 // SAFETY: pointer came from System.alloc with this Layout and
