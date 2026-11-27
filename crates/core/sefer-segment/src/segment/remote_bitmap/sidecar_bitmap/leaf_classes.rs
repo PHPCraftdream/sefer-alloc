@@ -5,9 +5,12 @@
 //! segment state. Producers never write them.
 //!
 //! # Construction contract
-//! The directory allocates the backing with `System.alloc` and constructs it
-//! in place with `initialize_at`, which writes the all-zero pattern — the
-//! valid initial state (null leaf pointers, zero presence bits).
+//! The directory constructs the backing in place with `initialize_at`,
+//! which writes the all-zero pattern — the valid initial state (null leaf
+//! pointers, zero presence bits). Task #223: on the default OS-zeroed-span
+//! path (`SmallSidecarBacking::Vmem`) `initialize_at` is NOT called — the
+//! OS already handed back zeroed pages, for which all-zero is a valid
+//! state; `initialize_at` remains the `System` fallback construction.
 #![allow(unsafe_code)]
 use core::ptr;
 use core::ptr::NonNull;
@@ -333,6 +336,31 @@ impl ClassLeaves {
             .iter()
             .filter(|p| !p.load(Ordering::Acquire).is_null())
             .count()
+    }
+
+    /// Exhaustive-zero-state surface (`SmallSidecar`'s internals test
+    /// accessors forward these): raw leaf-presence word `word` — all-zero
+    /// in the documented initial state, before any promotion.
+    #[cfg(feature = "internals")]
+    pub(crate) fn presence_word_for_test(&self, word: usize) -> u64 {
+        assert!(word < PRESENT_WORDS);
+        self.present[word].load(Ordering::Acquire)
+    }
+
+    /// Exhaustive-zero-state surface: raw mixed-leaf slot address for
+    /// `leaf` — null (`0`) in the documented initial state.
+    #[cfg(feature = "internals")]
+    pub(crate) fn mixed_slot_addr_for_test(&self, leaf: usize) -> usize {
+        assert!(leaf < LEAVES);
+        self.mixed[leaf].load(Ordering::Acquire) as usize
+    }
+
+    /// Exhaustive-zero-state surface: raw chunk-slot address for `chunk` —
+    /// null (`0`) in the documented initial state.
+    #[cfg(feature = "internals")]
+    pub(crate) fn chunk_slot_addr_for_test(&self, chunk: usize) -> usize {
+        assert!(chunk < CHUNKS);
+        self.chunks[chunk].load(Ordering::Acquire) as usize
     }
 
     #[cfg(all(feature = "internals", feature = "bench-internals"))]

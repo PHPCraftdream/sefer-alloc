@@ -421,6 +421,12 @@ export const REVIEWED_SURFACE = [
     ['crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs', ['with_initial_incarnation_for_test'], 'mutator', 'constructs isolated directory with chosen initial incarnation'],
     ['crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs', ['retained_pointer_capacity_for_test', 'moved_pointer_cells_for_test', 'shard_index_for_test', 'live_route_census_for_test'], 'observer', 'directory capacity/census under its locks'],
     ['crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar.rs', ['class_at_for_test', 'mixed_leaves_for_test', 'system_totals_for_test', 'chunk_totals_for_test'], 'observer', 'sidecar class/counter observations'],
+    // Task #223: exhaustive-zero-state observers over an owner-exclusive
+    // live sidecar; each hook only LOADS counters/atomics or reads a raw
+    // slot address AS AN INTEGER (never dereferences).
+    ['crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar.rs', ['sidecar_backing_counts_for_test', 'explicit_sidecar_fill_words_for_test'], 'observer', 'Relaxed process-lifetime diagnostic counter snapshots; no pointers, no protocol effect'],
+    ['crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar.rs', ['pending_word_for_test', 'leaf_presence_word_for_test'], 'observer', 'atomic word loads over the caller-owned live sidecar; no mutation'],
+    ['crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar.rs', ['mixed_leaf_slot_addr_for_test', 'chunk_slot_addr_for_test'], 'observer', 'raw slot addresses read as integers (initial-state null check); never dereferenced'],
     ['crates/core/sefer-segment/src/segment/segment_route/route_state/registration.rs', ['class_at_global_address_for_test'], 'observer', 'lookup pins independent sidecar before class read'],
     ['crates/core/sefer-segment/src/segment/segment_route/route_protocol/large_state.rs', ['word_for_test'], 'observer', 'atomic terminal state snapshot'],
     ['crates/core/sefer-segment/src/segment/segment_route/route_state/pin.rs', ['pending_for_test'], 'observer', 'pinned sidecar pending state'],
@@ -432,6 +438,9 @@ export const REVIEWED_SURFACE = [
     ['src/global/maintenance_service.rs', ['try_fallback_step_for_test', 'fail_next_start_for_test', 'pause_start_for_test', 'wait_start_paused_for_test', 'fail_worker_for_test'], 'mutator', 'bounded maintenance step or explicit startup/worker fault injection; synchronization retained'],
     ['crates/core/sefer-segment/src/segment/segment_route/directory/route_directory.rs', ['fail_next_registrations_for_test'], 'mutator', 'TLS registration failure countdown; handled fallible path'],
     ['crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar.rs', ['fail_spill_after_for_test', 'fail_next_spills_for_test', 'fail_prepare_after_for_test'], 'mutator', 'atomic fallible preparation/spill fault injection'],
+    // Task #223: TLS countdown diverting the next sidecar allocations onto
+    // the handled System fallback; plain Cell mutation, no raw pointers.
+    ['crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar.rs', ['fail_vmem_reserve_for_test'], 'mutator', 'TLS countdown diverting sidecar allocations to the handled System fallback'],
     ['crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar.rs', ['spill_failures_remaining_for_test'], 'observer', 'atomic injection countdown'],
     ['crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar.rs', ['owner_state_for_test'], 'unsafe', 'caller owns mapped reservation; raw metadata snapshot'],
     ['crates/core/sefer-alloc-core/src/alloc_core/large/alloc_core_large_cache_eviction.rs', ['terminal_cached_large_state_for_test'], 'observer', 'owner cache terminal snapshot'],

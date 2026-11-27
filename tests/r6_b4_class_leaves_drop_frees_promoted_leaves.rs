@@ -9,7 +9,6 @@
     feature = "bench-internals"
 ))]
 
-use core::mem::size_of;
 use std::sync::Mutex;
 
 use sefer_alloc::registry::segment_route::{RouteDirectory, RouteKind, SmallSidecar};
@@ -36,15 +35,16 @@ fn drop_frees_exactly_the_promoted_leaves() {
         assert!(route.prepare_small((leaf * LEAF) as u32, 1), "leaf {leaf}");
     }
     assert_eq!(sidecar.mixed_leaves_for_test(), promoted.len());
-    let size = size_of::<SmallSidecar>();
+    // Task #223: the sidecar backing is the OS-zeroed VM span, so the
+    // System totals carry ONLY the promoted-leaf requests.
     let leaf_bytes = promoted.len() * 256;
     let live = SmallSidecar::system_totals_for_test();
-    assert_eq!(live.0 - before.0, size + leaf_bytes);
-    // Nothing is zeroed: v2 constructs the sidecar in place over System.alloc
-    // (A/B v1 reverted alloc_zeroed), and leaf spills are unzeroed.
+    assert_eq!(live.0 - before.0, leaf_bytes);
+    // Nothing is zeroed: the heap fallback constructs the sidecar in place
+    // over System.alloc, and leaf spills are unzeroed.
     assert_eq!(live.1 - before.1, 0);
     assert_eq!(live.2 - before.2, 0);
-    assert_eq!(live.3 - before.3, 1 + promoted.len());
+    assert_eq!(live.3 - before.3, promoted.len());
     assert_eq!(live.4 - before.4, 0);
 
     // Unlink the route while a pin still holds the sidecar: nothing freed.
@@ -53,12 +53,13 @@ fn drop_frees_exactly_the_promoted_leaves() {
     let held = SmallSidecar::system_totals_for_test();
     assert_eq!(held.2 - before.2, 0);
 
-    // Last pin dropped: the Drop frees exactly backing + promoted leaves.
+    // Last pin dropped: the Drop frees exactly the promoted leaves (the
+    // OS-zeroed span backing is released by its own reservation Drop).
     drop(pin);
     let after = SmallSidecar::system_totals_for_test();
-    assert_eq!(after.2 - before.2, size + leaf_bytes);
-    assert_eq!(after.3 - before.3, 1 + promoted.len());
-    assert_eq!(after.4 - before.4, 1 + promoted.len());
+    assert_eq!(after.2 - before.2, leaf_bytes);
+    assert_eq!(after.3 - before.3, promoted.len());
+    assert_eq!(after.4 - before.4, promoted.len());
     assert_eq!(after.0 - before.0, after.2 - before.2);
     assert_eq!(after.1 - before.1, 0);
     drop(reservation);

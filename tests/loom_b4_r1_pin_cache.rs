@@ -473,6 +473,9 @@ mod route_scan;
 #[allow(dead_code)]
 #[path = "../crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar.rs"]
 mod small_sidecar;
+#[allow(dead_code)]
+#[path = "../crates/core/sefer-segment/src/segment/segment_route/route_state/small_sidecar_backing.rs"]
+mod small_sidecar_backing;
 
 // The included files resolve their SIBLINGS through `super` (they sit in
 // `segment_route` in production), so the root re-exports the surface those
