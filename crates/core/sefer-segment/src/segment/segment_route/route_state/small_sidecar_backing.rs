@@ -17,14 +17,14 @@
 //!
 //! ## Fallbacks (required for correctness, not performance)
 //!
-//! - **Interpreter build**: the aligned-vmem backend of the interpreter
-//!   build is `System`-backed and does NOT hand back zeroed memory; `SmallSidecar::allocate` explicitly
+//! - **`miri`**: the aligned-vmem miri backend is `System`-backed and does
+//!   NOT hand back zeroed memory; `SmallSidecar::allocate` explicitly
 //!   zeroes the span in that build, so the observed initial state is
 //!   identical.
-//! - **Model-checker build**: its atomics are tracked cells that must be
-//!   built by `AtomicU64::new`/`AtomicPtr::new`; raw OS-zeroed bytes
-//!   reinterpreted as atomics are not valid tracked cells. That build never
-//!   constructs the `Vmem` variant (see the availability constant in
+//! - **`cfg(loom)`**: loom atomics are tracked cells that must be built by
+//!   `AtomicU64::new`/`AtomicPtr::new`; raw OS-zeroed bytes reinterpreted
+//!   as atomics are not valid loom cells. Ghost builds never construct the
+//!   `Vmem` variant (see the availability constant in
 //!   `small_sidecar.rs`) and take the explicit-construction `System` path.
 //! - **OOM**: if the reservation fails, `allocate` falls back to the
 //!   historical `System.alloc` + `initialize_at` path; the tag records
@@ -61,13 +61,13 @@
 #[allow(dead_code)]
 pub(crate) enum SmallSidecarBacking {
     /// An anonymous OS reservation from `aligned_vmem::reserve_aligned`:
-    /// already zeroed by the OS (or explicitly in the interpreter build, see the module
+    /// already zeroed by the OS (or explicitly under `miri`, see the module
     /// doc), so no userspace zero-fill runs on the registration path. The
     /// inner `Reservation` is moved out by `SmallSidecar::take_backing` and
     /// dropped (munmap) by `SmallSidecar::release_taken_backing` only after
     /// the payload drop returned; no automatic field glue runs afterwards.
     Vmem(aligned_vmem::Reservation),
-    /// `System`-heap fallback (`reserve_aligned` refused, or a model-checker build):
+    /// `System`-heap fallback (`reserve_aligned` refused, or a ghost build):
     /// constructed fully in place by `SmallSidecar::initialize_at`; released
     /// by `SmallSidecar::release_taken_backing` with
     /// `Layout::new::<SmallSidecar>()` after the payload drop returned.

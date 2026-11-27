@@ -32,14 +32,13 @@ use std::alloc::{GlobalAlloc, Layout, System};
 // Task #223 counterfactual oracle for the zero-fill itself: a relaxed count
 // of u64-granule payload words explicitly zero-filled in USERSPACE at
 // sidecar construction. Bumped at exactly two sites, and the fill and its
-// accounting are ONE operation each: (1) the interpreter build's cfg-gated
-// helper `explicit_zero_fill_words` (called from the single `allocate`
-// VM-span site; counts `size_of::<Self>() / 8` — that build's VM backend is
-// System-backed and does not hand back zeroed bytes), and (2)
-// `initialize_at`'s per-word pending construction (counts
-// `SidecarBitmap::WORDS` — the `System` fallback builds every atomic in
-// place). A registration on the OS-zeroed-span path bumps NOTHING here on
-// every native target, so a delta of
+// accounting are ONE operation each: (1) the `#[cfg(miri)]` helper
+// `explicit_zero_fill_words` (called from the single `allocate` VM-span
+// site; counts `size_of::<Self>() / 8` — the miri backend is System-backed
+// and does not hand back zeroed bytes), and (2) `initialize_at`'s per-word
+// pending construction (counts `SidecarBitmap::WORDS` — the `System` fallback
+// builds every atomic in place). A registration on the OS-zeroed-span path
+// bumps NOTHING here under every real (non-miri) target, so a delta of
 // exactly 0 proves no userspace zero-fill ran; reintroducing a full
 // `write_bytes` zero-fill on the VM path would make the delta nonzero and
 // redden `tests/p223_small_sidecar_zero_free_backing.rs` (byte-content
@@ -58,9 +57,12 @@ static HEAP_SIDECARS: core::sync::atomic::AtomicUsize = core::sync::atomic::Atom
 static HEAP_SIDECAR_RELEASES: core::sync::atomic::AtomicUsize =
     core::sync::atomic::AtomicUsize::new(0);
 
-// The OS-zeroed VM backing is available on every native target; builds
-// whose atomics must be constructed explicitly opt out with a cfg-gated
-// definition of this constant.
+// Ghost builds never take the OS-zeroed path: loom atomics are tracked cells
+// that must be built by `AtomicU64::new`, not reinterpreted from raw zeroed
+// bytes (see `small_sidecar_backing.rs`).
+#[cfg(loom)]
+const VMEM_BACKING_AVAILABLE: bool = false;
+#[cfg(not(loom))]
 const VMEM_BACKING_AVAILABLE: bool = true;
 
 std::thread_local! {
@@ -87,7 +89,7 @@ const _: () = {
 /// OS-zeroed VM span (`SmallSidecarBacking::Vmem`), so the all-zero valid
 /// initial state comes from the OS — no userspace zero-fill runs, and the
 /// backing tag is the only field written at registration. The `System`
-/// fallback (reservation OOM, or model-checker builds whose atomics must be
+/// fallback (reservation OOM, or ghost builds where loom atomics must be
 /// constructed in place) uses `initialize_at`, which writes the all-zero
 /// pattern field by field (null leaf pointers, zero pending words:
 /// `SidecarBitmap::publish` rejects a zero encoded class — and zero
@@ -127,6 +129,26 @@ pub struct SmallSidecar {
     classes: core::mem::ManuallyDrop<ClassLeaves>,
 }
 
+/// Task #223 fill oracle, ONE operation under one guard: the miri backend
+/// is System-backed and does not hand back zeroed bytes, so the VM-span
+/// path writes the zeros itself AND accounts for them in the same
+/// cfg-gated function. Because the write and its counter bump live in this
+/// single function called from the single `allocate` VM-span site, neither
+/// can be partially reverted (dropping only the write's guard cannot
+/// silently restore a fill without accounting, or vice versa).
+#[cfg(miri)]
+fn explicit_zero_fill_words(raw: *mut u8, bytes: usize) {
+    // SAFETY: single documented reason: `raw` is the non-null, page-aligned
+    // base of a fresh, exclusively owned reservation nothing else
+    // references yet; the miri backend does not hand back zeroed memory, so
+    // writing zeros (which also marks the bytes initialized for miri) is
+    // sound. Every real OS backend hands back zeroed anonymous pages and
+    // never calls this helper.
+    unsafe { core::ptr::write_bytes(raw, 0, bytes) };
+    EXPLICIT_SIDECAR_FILL_WORDS
+        .fetch_add(bytes / core::mem::size_of::<u64>(), CoreOrdering::Relaxed);
+}
+
 impl SmallSidecar {
     /// Process-wide RouteSlots System totals: (arrays allocated, arrays freed,
     /// bytes allocated, bytes freed). Read at quiescent checkpoints; separate
@@ -150,8 +172,7 @@ impl SmallSidecar {
     pub const WORDS: usize = SidecarBitmap::WORDS;
 
     /// Private storage for one sidecar: OS-zeroed VM span when available,
-    /// `System` heap fallback otherwise (model-checker builds, reservation
-    /// OOM).
+    /// `System` heap fallback otherwise (ghost builds, reservation OOM).
     /// Null means OOM (both backends refused) — the caller keeps the
     /// historical `RouteError::OutOfMemory` behavior.
     pub(crate) fn allocate() -> *mut u8 {
@@ -168,9 +189,10 @@ impl SmallSidecar {
             if let Some(vm) = SmallSidecarBacking::reserve_zeroed_span(core::mem::size_of::<Self>())
             {
                 let raw = vm.as_ptr().cast::<Self>();
+                #[cfg(miri)]
+                explicit_zero_fill_words(raw.cast::<u8>(), core::mem::size_of::<Self>());
                 // SAFETY: single documented reason: `raw` is a private,
-                // page-aligned, OS-zeroed (or, in the interpreter build,
-                // explicitly zeroed) span with this
+                // page-aligned, OS-zeroed (or miri-zeroed) span with this
                 // exact layout (`ManuallyDrop` is layout-transparent), and
                 // the backing tag is the one field whose all-zero bytes are
                 // not a valid value; nothing observes or drops the span
@@ -415,7 +437,7 @@ impl SmallSidecar {
 
     /// Task #223 counterfactual oracle: relaxed count of u64-granule payload
     /// words explicitly zero-filled in userspace at sidecar construction
-    /// (the interpreter build's full-span `write_bytes` plus `initialize_at`'s pending
+    /// (the miri full-span `write_bytes` plus `initialize_at`'s pending
     /// words; see the static's documentation). A registration on the
     /// OS-zeroed-span path must leave this counter untouched; see
     /// `tests/p223_small_sidecar_zero_free_backing.rs`.

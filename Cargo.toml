@@ -2738,6 +2738,14 @@ name = "r6_t40_sidecar_system_alloc"
 path = "tests/r6_t40_sidecar_system_alloc.rs"
 required-features = ["production", "internals", "bench-internals"]
 
+# Task #223: the SmallSidecar OS-zeroed-span backing — path-activation
+# oracle, heap-fallback construction, and end-to-end publish/reissue on many
+# segments.
+[[test]]
+name = "p223_small_sidecar_zero_free_backing"
+path = "tests/p223_small_sidecar_zero_free_backing.rs"
+required-features = ["production", "internals", "bench-internals"]
+
 
 # B4 J1′ (interleave judge): ONE-process, fine-portion ABBA/BAAB-interleaved
 # native judge — sefer (production) vs mimalloc. Both arms live in the same

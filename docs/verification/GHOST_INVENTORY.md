@@ -7,26 +7,26 @@ blanked, braces give the item path); G1's `crates/verify/ghost-lint` on `syn` re
 
 ## 1. Ordering sites
 
-770 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
+785 calls that carry a memory ordering (atomic methods, fences, and wrappers such as
 `HeapSlot::cas_state` whose arguments name an ordering) in 104 files of `src/**` and
 `crates/**/src/**`; each is claimed by exactly one of 61 scopes.
 
 | class | sites | of all sites |
 |---|---:|---:|
-| S | 13 | 13/770 |
-| cache | 6 | 6/770 |
-| counter | 285 | 285/770 |
-| ghost | 10 | 10/770 |
-| id | 9 | 9/770 |
-| kani | 1 | 1/770 |
-| lock-local | 40 | 40/770 |
-| non-atomic | 3 | 3/770 |
-| protocol | 213 | 213/770 |
-| test-hook | 183 | 183/770 |
-| twin | 7 | 7/770 |
-| **claimed** | **770** | 770/770 |
-| unclaimed | 0 | 0/770 |
-| claimed twice | 0 | 0/770 |
+| S | 13 | 13/785 |
+| cache | 6 | 6/785 |
+| counter | 291 | 291/785 |
+| ghost | 10 | 10/785 |
+| id | 9 | 9/785 |
+| kani | 1 | 1/785 |
+| lock-local | 40 | 40/785 |
+| non-atomic | 3 | 3/785 |
+| protocol | 213 | 213/785 |
+| test-hook | 192 | 192/785 |
+| twin | 7 | 7/785 |
+| **claimed** | **785** | 785/785 |
+| unclaimed | 0 | 0/785 |
+| claimed twice | 0 | 0/785 |
 
 Classes: `protocol` — the ordering is part of a cross-thread protocol (P-id in §2); `lock-local` —
 Relaxed under a lock, an owned pin or `&mut`; `counter` — statistics nobody synchronises on;
@@ -436,12 +436,12 @@ Decision: **rules + pure selector tests** — P26 rules pin the single Relaxed o
 | `P20/maintenance-service` | protocol | P20 | 6 | service state + pass counter used as a wait condition |
 | `P21/exact-shard` | protocol | P21 | 7 | shard lock + live hint |
 | `hook/maintenance-service` | test-hook | — | 7 | fault/pause injection and test observers (FAIL_START swap is armed only by fail_next_start_for_test) |
-| `hook/test-fns` | test-hook | — | 156 | dbg_*/for_test/internals-only hooks |
+| `hook/test-fns` | test-hook | — | 165 | dbg_*/for_test/internals-only hooks |
 | `hook/inject-flags` | test-hook | — | 16 | fault-injection / test-control flags |
 | `cache/page-size` | cache | — | 4 | idempotent cache of a process constant; Relaxed: every writer stores the same value |
 | `cache/process-exit` | cache | — | 2 | resolved function pointer cache (windows); Relaxed: idempotent |
 | `id/generators` | id | — | 7 | unique-id / incarnation generators: Relaxed RMW gives uniqueness, no ordering needed |
-| `counter/statics` | counter | — | 218 | statistics / diagnostic counters: Relaxed, no protocol reads them |
+| `counter/statics` | counter | — | 224 | statistics / diagnostic counters: Relaxed, no protocol reads them |
 | `counter/directory-stats` | counter | — | 18 | directory statistics counters accessed via root_compat::directory_stats const-fn accessors: Relaxed, no protocol reads them (P2.1 moved the statics behind accessors; same semantics as counter/statics) |
 | `counter/per-heap` | counter | — | 13 | per-heap hit counters published Relaxed (owner-written, read by stats) |
 | `counter/pin-cache-macro` | counter | — | 1 | macro_rules! count bumps a static counter |

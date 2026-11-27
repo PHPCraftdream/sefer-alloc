@@ -14,6 +14,13 @@ runs:
       # ci-default-shell: preserve original implicit runner shell
       shell: bash -e {0}
       run: cargo miri test --locked --features "alloc-global alloc-xthread alloc-decommit internals bench-internals" --test regression_r2_06_header_race_miri
+    # Task #223: sidecar zero-fill/free-backing oracle (miri-reduced mode
+    # inside the file): the only target exercising the explicit
+    # `explicit_zero_fill_words` path of the VM-span backend.
+    - name: p223_small_sidecar_zero_free_backing
+      # ci-default-shell: preserve original implicit runner shell
+      shell: bash -e {0}
+      run: cargo miri test --locked --features "production alloc-global alloc-xthread alloc-decommit internals bench-internals" --test p223_small_sidecar_zero_free_backing
     - name: tiny terminal owner invariant
       run: |
         cargo miri test --features "alloc-global alloc-xthread internals bench-internals" --test r6_terminal_owner_drain -- --exact requested_sizes_one_through_seven_retire_once_and_reissue 2>&1 | tee "$RUNNER_TEMP/miri-terminal-owner-tiny.log"

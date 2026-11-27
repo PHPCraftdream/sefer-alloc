@@ -62,7 +62,7 @@ impl EntryHandle {
                 // Task #223: OS-zeroed VM span when available — the
                 // all-zero valid initial state comes from the OS, no
                 // userspace zero-fill of the ~40 KiB sidecar runs. The
-                // `System` fallback (reservation OOM, cfg-gated verification builds) uses
+                // `System` fallback (reservation OOM, ghost builds) uses
                 // `initialize_at` and records its own System accounting.
                 // Null only when BOTH backends refused: the historical
                 // `RouteError::OutOfMemory` behavior is unchanged.

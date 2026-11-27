@@ -597,7 +597,7 @@ Historical display-name aliases resolve to the current workflow jobs. Their expl
 | 43410623227/131835907372 miri (alloc-core) | 2 / 3 | no log | no log | unknown |
 | 43410623227/131835907579 numa-shim macOS under miri (mod platform cfg regression guard) | default/unknown / 0 | no log | no log | unknown |
 | 43410623227/131835907616 aligned-vmem under miri (interpreter, not just --cfg miri check) | default/unknown / 0 | no log | no log | unknown |
-| 43410623227/131835907640 miri-plain | 6 / 4 | 1571.4 | 40.3 | 0–785.7 |
+| 43410623227/131835907640 miri-plain | 7 / 5 | 1571.4 | 40.3 | 0–785.7 |
 | 43582569269/132410259772 aligned-vmem under miri (interpreter, not just --cfg miri check) | default/unknown / 0 | no log | no log | unknown |
 | 43582569269/132410259958 miri (alloc-core) | 2 / 3 | no log | no log | unknown |
 | 43582569269/132410260038 miri (core) | 28 / 38 | 2094.4 | 1345.6 | 0–748.8 |
@@ -605,12 +605,12 @@ Historical display-name aliases resolve to the current workflow jobs. Their expl
 | 43582569269/132410260061 globalalloc-model under miri (interpreter, strict-provenance included) | default/unknown / 0 | no log | no log | unknown |
 | 43582569269/132410260082 once-ptr-cell under miri (interpreter, strict-provenance included) | default/unknown / 0 | no log | no log | unknown |
 | 43582569269/132410260141 miri (fastbin) | 4 / 3 | 1882.4 | 0.0 | 0–941.2 |
-| 43582569269/132410260402 miri-plain | 6 / 4 | 1643.4 | 41.4 | 0–821.7 |
+| 43582569269/132410260402 miri-plain | 7 / 5 | 1643.4 | 41.4 | 0–821.7 |
 | 43582569269/132410260407 numa-shim macOS under miri (mod platform cfg regression guard) | default/unknown / 0 | no log | no log | unknown |
 | 43704208363/132795418436 once-ptr-cell under miri (interpreter, strict-provenance included) | default/unknown / 0 | no log | no log | unknown |
 | 43704208363/132795418475 aligned-vmem under miri (interpreter, not just --cfg miri check) | default/unknown / 0 | no log | no log | unknown |
 | 43704208363/132795418733 miri (core) | 28 / 38 | 1271.0 | 807.3 | 0–463.7 |
-| 43704208363/132795418762 miri-plain | 6 / 4 | 1214.6 | 38.1 | 0–607.3 |
+| 43704208363/132795418762 miri-plain | 7 / 5 | 1214.6 | 38.1 | 0–607.3 |
 | 43704208363/132795418778 miri (alloc-core) | 2 / 3 | no log | no log | unknown |
 | 43704208363/132795418894 globalalloc-model under miri (interpreter, strict-provenance included) | default/unknown / 0 | no log | no log | unknown |
 | 43704208363/132795418911 miri (fastbin) | 4 / 3 | 1979.3 | 0.0 | 0–989.7 |
@@ -624,14 +624,14 @@ Historical display-name aliases resolve to the current workflow jobs. Their expl
 | 43781371392/133019282717 miri (core, pin cache TreeBorrows) | 1 / 1 | no log | no log | unknown |
 | 43781371392/133019282727 miri (core) | 28 / 38 | no log | no log | unknown |
 | 43781371392/133019282732 miri (alloc-core) | 2 / 3 | no log | no log | unknown |
-| 43781371392/133019282758 miri-plain | 6 / 4 | no log | no log | unknown |
+| 43781371392/133019282758 miri-plain | 7 / 5 | no log | no log | unknown |
 | 43851422289/133244747145 aligned-vmem under miri (interpreter, not just --cfg miri check) | default/unknown / 0 | no log | no log | unknown |
 | 43851422289/133244747168 globalalloc-model under miri (interpreter, strict-provenance included) | default/unknown / 0 | no log | no log | unknown |
 | 43851422289/133244747299 miri (core) | 28 / 38 | no log | no log | unknown |
 | 43851422289/133244747615 miri (core, pin cache TreeBorrows) | 1 / 1 | no log | no log | unknown |
 | 43851422289/133244747625 once-ptr-cell under miri (interpreter, strict-provenance included) | default/unknown / 0 | no log | no log | unknown |
 | 43851422289/133244747693 numa-shim macOS under miri (mod platform cfg regression guard) | default/unknown / 0 | no log | no log | unknown |
-| 43851422289/133244747713 miri-plain | 6 / 4 | no log | no log | unknown |
+| 43851422289/133244747713 miri-plain | 7 / 5 | no log | no log | unknown |
 | 43851422289/133244747871 miri (fastbin) | 4 / 3 | no log | no log | unknown |
 | 43851422289/133244747905 miri (alloc-core) | 2 / 3 | no log | no log | unknown |
 | 43886332211/133365634550 aligned-vmem under miri (interpreter, not just --cfg miri check) | default/unknown / 0 | no log | no log | unknown |
@@ -640,7 +640,7 @@ Historical display-name aliases resolve to the current workflow jobs. Their expl
 | 43886332211/133365636628 miri (fastbin) | 4 / 3 | no log | no log | unknown |
 | 43886332211/133365636722 miri (alloc-core) | 2 / 3 | no log | no log | unknown |
 | 43886332211/133365636764 miri (core) | 28 / 38 | no log | no log | unknown |
-| 43886332211/133365636928 miri-plain | 6 / 4 | no log | no log | unknown |
+| 43886332211/133365636928 miri-plain | 7 / 5 | no log | no log | unknown |
 | 43886332211/133365636939 miri (core, pin cache TreeBorrows) | 1 / 1 | no log | no log | unknown |
 | 43886332211/133365637161 numa-shim macOS under miri (mod platform cfg regression guard) | default/unknown / 0 | no log | no log | unknown |
 
